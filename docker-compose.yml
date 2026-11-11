@@ -1,0 +1,15 @@
+services:
+  mariadb:
+    image: mariadb:latest
+    container_name: astrolog-mariadb
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: astrolog
+    ports:
+      - "3306:3306"
+    volumes:
+      - astrolog_data:/var/lib/mysql
+
+volumes:
+  astrolog_data:

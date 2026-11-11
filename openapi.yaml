@@ -1,0 +1,358 @@
+openapi: 3.0.3
+info:
+  title: AstroLog API
+  version: 1.0.0
+  description: |
+    API para registro e consulta de observações astronômicas.
+    Stack: Flask + SQLAlchemy + MariaDB.
+
+servers:
+  - url: http://localhost:5000
+    description: Ambiente local
+
+tags:
+  - name: health
+    description: Health check do serviço
+  - name: observacoes
+    description: Operações sobre observações astronômicas
+  - name: locais
+    description: Operações sobre locais de observação
+  - name: dashboard
+    description: Dados agregados (consumo de API externa)
+
+paths:
+  /api/health:
+    get:
+      tags: [health]
+      summary: Verifica se a API está no ar
+      responses:
+        '200':
+          description: Serviço saudável
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+              example:
+                status: ok
+                servico: astrolog
+
+  /api/observacoes:
+    get:
+      tags: [observacoes]
+      summary: Lista observações
+      parameters:
+        - name: tipo_astro
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [planeta, estrela, nebula, galaxia, lua, outro]
+          example: planeta
+      responses:
+        '200':
+          description: Lista de observações
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ObservacaoOutput'
+
+    post:
+      tags: [observacoes]
+      summary: Cria uma nova observação
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ObservacaoInput'
+            example:
+              astro_observado: Júpiter
+              tipo_astro: planeta
+              equipamento: Telescópio Refletor 114mm
+              data_hora: "2025-03-10T22:30:00"
+              local: Parque Nacional da Serra da Canastra
+              poluicao_luminosa: baixa
+              visibilidade: excelente
+              anotacoes: Quatro luas galileanas visíveis.
+      responses:
+        '201':
+          description: Observação criada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObservacaoOutput'
+        '400':
+          description: Dados inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+              example:
+                erro: "O campo 'astro_observado' é obrigatório"
+
+  /api/observacoes/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    get:
+      tags: [observacoes]
+      summary: Consulta uma observação pelo ID
+      responses:
+        '200':
+          description: Observação encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObservacaoOutput'
+        '404':
+          description: Não encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+              example:
+                erro: Observação não encontrada
+    patch:
+      tags: [observacoes]
+      summary: Atualização parcial de uma observação
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ObservacaoInput'
+            example:
+              visibilidade: boa
+      responses:
+        '200':
+          description: Observação atualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObservacaoOutput'
+        '404':
+          description: Não encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+    delete:
+      tags: [observacoes]
+      summary: Remove uma observação
+      responses:
+        '204':
+          description: Removida com sucesso
+        '404':
+          description: Não encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+
+  /api/locais:
+    get:
+      tags: [locais]
+      summary: Lista locais de observação
+      responses:
+        '200':
+          description: Lista de locais
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LocalObservacaoOutput'
+    post:
+      tags: [locais]
+      summary: Cadastra um novo local
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocalObservacaoInput'
+            example:
+              nome: Observatório do Pico dos Dias
+              latitude: -22.5344
+              longitude: -45.5825
+              nivel_poluicao: baixa
+              descricao: Local com céu limpo e boa estabilidade atmosférica.
+      responses:
+        '201':
+          description: Local criado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocalObservacaoOutput'
+        '400':
+          description: Dados inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+
+  /api/locais/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    get:
+      tags: [locais]
+      summary: Consulta um local pelo ID
+      responses:
+        '200':
+          description: Local encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocalObservacaoOutput'
+        '404':
+          description: Não encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+    delete:
+      tags: [locais]
+      summary: Remove um local
+      responses:
+        '204':
+          description: Removido
+        '404':
+          description: Não encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+
+  /api/dashboard/hoje:
+    get:
+      tags: [dashboard]
+      summary: Dados do dia consumidos da NASA APOD
+      responses:
+        '200':
+          description: Dados retornados pela NASA (formatados)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardDia'
+              example:
+                titulo: A Window to the Sky
+                data: "2025-03-10"
+                descricao: Imagem astronômica do dia fornecida pela NASA.
+                url_imagem: https://apod.nasa.gov/apod/image/example.jpg
+                hdurl: https://apod.nasa.gov/apod/image/example_hd.jpg
+                media_type: image
+                copyright: NASA
+        '502':
+          description: Falha ao consultar a NASA
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+
+components:
+  parameters:
+    IdPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+      example: 1
+
+  schemas:
+    Health:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        servico:
+          type: string
+          example: astrolog
+
+    Erro:
+      type: object
+      properties:
+        erro:
+          type: string
+
+    ObservacaoInput:
+      type: object
+      required: [astro_observado, tipo_astro]
+      properties:
+        astro_observado:
+          type: string
+          example: Júpiter
+        tipo_astro:
+          type: string
+          enum: [planeta, estrela, nebula, galaxia, lua, outro]
+        equipamento:
+          type: string
+        data_hora:
+          type: string
+          format: date-time
+        local:
+          type: string
+        poluicao_luminosa:
+          type: string
+          enum: [baixa, media, alta]
+        visibilidade:
+          type: string
+          enum: [excelente, boa, regular, ruim]
+        anotacoes:
+          type: string
+
+    ObservacaoOutput:
+      allOf:
+        - type: object
+          properties:
+            id:
+              type: integer
+              example: 1
+        - $ref: '#/components/schemas/ObservacaoInput'
+
+    LocalObservacaoInput:
+      type: object
+      required: [nome]
+      properties:
+        nome:
+          type: string
+        latitude:
+          type: number
+          format: float
+        longitude:
+          type: number
+          format: float
+        nivel_poluicao:
+          type: string
+          enum: [baixa, media, alta]
+        descricao:
+          type: string
+
+    LocalObservacaoOutput:
+      allOf:
+        - type: object
+          properties:
+            id:
+              type: integer
+              example: 1
+        - $ref: '#/components/schemas/LocalObservacaoInput'
+
+    DashboardDia:
+      type: object
+      properties:
+        titulo:
+          type: string
+        data:
+          type: string
+        descricao:
+          type: string
+        url_imagem:
+          type: string
+        hdurl:
+          type: string
+        media_type:
+          type: string
+        copyright:
+          type: string
