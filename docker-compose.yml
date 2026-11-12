@@ -7,7 +7,7 @@ services:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: astrolog
     ports:
-      - "3306:3306"
+      - "3307:3306"   # <-- Mude aqui (era 3306:3306)
     volumes:
       - astrolog_data:/var/lib/mysql
 

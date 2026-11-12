@@ -60,6 +60,18 @@ def init_db():
 def health():
     return jsonify({"status": "ok", "servico": "astrolog"})
 
+@app.get("/")
+def inicio():
+    return jsonify({
+        "mensagem": "AstroLog API no ar!",
+        "docs": "/swagger",
+        "endpoints": [
+            "/api/health",
+            "/api/observacoes",
+            "/api/locais",
+            "/api/dashboard/hoje",
+        ],
+    }), 200
 
 # ---------------------------------------------------------------------------
 # Swagger UI (servindo o contrato openapi.yaml local)
