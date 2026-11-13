@@ -3,9 +3,12 @@
 Rodar (com a API já em execução em http://127.0.0.1:5000):
     python frontend/gradio_app.py
 """
-import io
-import os 
 import base64
+import io
+import math
+import os
+from datetime import datetime, timezone
+from html import escape
 
 import gradio as gr
 import pandas as pd
@@ -30,6 +33,18 @@ def get_base64_image():
         print(f"Aviso: Imagem não encontrada em {img_path}")
         return ""
 
+def get_base64_planeta(nome_arquivo):
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    img_path = os.path.abspath(os.path.join(current_dir, "..", "img", nome_arquivo))
+    try:
+        with open(img_path, "rb") as image_file:
+            encoded_string = base64.b64encode(image_file.read()).decode()
+            # Detecta se é png ou jpg
+            ext = "png" if nome_arquivo.endswith(".png") else "jpeg"
+            return f"data:image/{ext};base64,{encoded_string}"
+    except FileNotFoundError:
+        return ""
+
 IMG_BASE64 = get_base64_image()
 
 # ---------------------------------------------------------------------------
@@ -37,14 +52,11 @@ IMG_BASE64 = get_base64_image()
 # ---------------------------------------------------------------------------
 CSS = f"""
 /* --- RESET AGRESSIVO --- */
-html, body, .gradio-container, .main, .wrap {{
+html, body, .gradio-container {{
     margin: 0 !important;
     padding: 0 !important;
-    width: 100vw !important;
-    height: 100vh !important;
-    max-width: 100vw !important;
-    max-height: 100vh !important;
-    overflow: hidden !important;
+    max-width: 100% !important;
+    min-height: 100vh;
     background: #0b0a17 !important;
 }}
 
@@ -64,10 +76,10 @@ html, body, .gradio-container, .main, .wrap {{
     width: 100vw !important;
     box-sizing: border-box !important; 
     margin: 0 !important;
-    position: absolute !important;
+    position: fixed !important;
+    z-index: 50;
     top: 0;
     left: 0;
-    display: flex !important;
     flex-direction: column !important;
     justify-content: space-between !important; /* Empurra o botão para o final */
 }}
@@ -142,6 +154,136 @@ html, body, .gradio-container, .main, .wrap {{
   .painel {{ grid-column: 1; grid-row: 2; justify-self: center; margin-bottom: 5vh; }}
 }}
 """
+
+
+CSS_DASH = """
+/* a tela inicial só aparece enquanto estiver visível */
+#tela-inicio:not(.hide):not(.hidden):not([hidden]) { display: flex !important; }
+#tela-inicio.hide, #tela-inicio.hidden, #tela-inicio[hidden] { display: none !important; }
+
+/* ===== App: barra superior + menu lateral ===== */
+#tela-app { background: #0b0a17; min-height: 100vh; gap: 0 !important; padding: 0 !important; }
+
+/* --- NAVBAR FIXA --- */
+#topbar { 
+    background: linear-gradient(90deg, #3b0764, #4c1d95); 
+    padding: 14px 28px !important;
+    align-items: center; 
+    justify-content: flex-start !important; 
+    gap: 32px !important;
+    flex-wrap: nowrap !important; 
+    margin: 0 !important;
+    /* Fixação */
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    width: 100% !important;
+    z-index: 1000 !important;
+    box-sizing: border-box !important;
+    height: 70px; /* Altura fixa para cálculo */
+}
+
+#topbar-logo, #topbar-logo > * { background: transparent !important; border: none !important;
+          padding: 0 !important; flex: 0 0 auto !important; width: auto !important; min-width: 0 !important; }
+.logo { color: #fff; font-size: 1.4rem; font-weight: 700; }
+#busca { flex: 0 1 400px !important; width: 400px !important; max-width: 400px !important;
+         min-width: 0 !important; background: transparent !important; border: none !important; }
+#busca textarea, #busca input { background: rgb(0 0 0 / 30%) !important; color: #e8e6f5 !important;
+          border: 1px solid rgb(0 0 0 / 12%) !important; border-radius: 999px !important;
+          padding: 10px 18px !important; }
+
+/* Container principal ajustado para não esconder atrás da navbar */
+#corpo { 
+    gap: 0 !important; 
+    flex-wrap: nowrap !important; 
+    margin-top: 70px !important; /* Compensa a navbar fixa */
+    min-height: calc(100vh - 70px) !important;
+    display: flex !important;
+}
+
+/* --- SIDEBAR FIXA --- */
+#sidebar { 
+    background: #0d0c1d; 
+    border-right: 1px solid rgba(255,255,255,.05);
+    padding: 18px 14px !important; 
+    gap: 8px !important;
+    flex: none !important; 
+    width: 210px !important; 
+    /* Fixação */
+    position: fixed !important;
+    top: 70px; /* Abaixo da navbar */
+    left: 0;
+    bottom: 0;
+    overflow-y: auto; /* Permite scroll interno se o menu for muito longo */
+    z-index: 900 !important;
+    box-sizing: border-box !important;
+}
+
+.nav-btn { background: transparent !important; color: #cfcde6 !important; border: none !important;
+           box-shadow: none !important; justify-content: flex-start !important; text-align: left;
+           padding: 12px 16px !important; border-radius: 12px !important; font-weight: 600 !important; }
+.nav-btn:hover { background: rgba(139,92,246,.15) !important; }
+.nav-btn.primary { background: #8b5cf6 !important; color: #fff !important; }
+
+/* --- CONTEÚDO AJUSTADO --- */
+#conteudo { 
+    padding: 22px 28px !important; 
+    background: #0b0a17; 
+    margin-left: 210px !important; /* Compensa a sidebar fixa */
+    width: calc(100% - 210px) !important;
+    min-height: calc(100vh - 70px) !important;
+    box-sizing: border-box !important;
+}
+
+/* ===== Dashboard ===== */
+.dash { display: grid; grid-template-columns: 1fr 1.1fr; gap: 20px; color: #e8e6f5; }
+.dcol { display: flex; flex-direction: column; gap: 16px; }
+.dash h1 { font-size: 2.2rem; font-weight: 800; margin: 0; color: #fff; }
+.dash .data { color: #a5a3c4; margin: 4px 0 6px; }
+.dash h3 { font-size: 1.05rem; margin: 6px 0 0; color: #fff; }
+.dcard { background: rgba(22,24,52,.75); border: 1px solid rgba(255,255,255,.06);
+         border-radius: 18px; padding: 20px; }
+.lua-card { display: flex; align-items: center; gap: 22px; }
+.lua-card svg { width: 96px; height: 96px; flex: none; filter: drop-shadow(0 0 14px rgba(255,240,200,.25)); }
+.mini { font-size: .7rem; letter-spacing: .1em; color: #a5a3c4; text-transform: uppercase; }
+.lua-nome { font-size: 1.7rem; font-weight: 700; color: #fff; }
+.amarelo { color: #f2c94c; font-size: .85rem; }
+.clima { display: flex; justify-content: space-around; }
+.clima div { text-align: center; }
+.clima b { display: block; font-size: 1.3rem; }
+.clima span { font-size: .75rem; color: #a5a3c4; }
+.verde { color: #34d399; } .azul { color: #38bdf8; }
+.planeta { display: flex; align-items: center; gap: 14px; padding: 12px 6px;
+           border-bottom: 1px solid rgba(255,255,255,.05); }
+.planeta:last-child { border-bottom: none; }
+.planeta .img-planeta {  border-radius: 50%;  flex: none;  object-fit: cover; box-shadow: 0 0 10px rgba(0,0,0,0.5); transition: transform 0.2s; }
+.planeta:hover .img-planeta { transform: scale(1.1); /* Efeito de zoom ao passar o mouse */ }
+.planeta .info { flex: 1; } .planeta b { display: block; color: #fff; }
+.planeta span { font-size: .75rem; color: #a5a3c4; }
+.badge { padding: 6px 16px; border-radius: 999px; font-size: .78rem; font-weight: 600; }
+.b-baixa { background: #3a2f12; color: #f2c94c; } .b-media { background: #3a3417; color: #e8d26a; }
+.b-alta { background: #123a33; color: #34d399; }
+.ceu-head { display: flex; justify-content: space-between; align-items: flex-start; }
+.ceu-head b { font-size: 1.1rem; color: #fff; }
+.ceu-head .sub { display: block; font-size: .8rem; color: #a5a3c4; }
+.dash-link { cursor: pointer; background: rgba(139,92,246,.18); color: #cfc2ff; padding: 8px 14px;
+             border-radius: 999px; font-size: .8rem; white-space: nowrap; }
+.ceu-svg { width: 100%; height: auto; }
+
+/* CARD DA NASA (APOD) - Ajustado para garantir a imagem */
+.apod { display: flex; flex-direction: row; padding: 0; overflow: hidden; min-height: 250px; }
+.apod .txt { flex: 1.1; padding: 22px; display: flex; flex-direction: column; gap: 8px; }
+.apod .tag2 { color: #f2c94c; font-size: .7rem; letter-spacing: .1em; font-weight: 700; }
+.apod h2 { margin: 0; font-size: 1.4rem; color: #fff; display: -webkit-box; -webkit-line-clamp: 2;
+           -webkit-box-orient: vertical; overflow: hidden; }
+.apod p { margin: 0; color: #a5a3c4; font-size: .85rem; display: -webkit-box; -webkit-line-clamp: 4;
+          -webkit-box-orient: vertical; overflow: hidden; }
+.apod .img { flex: 1; min-height: 250px; background-size: cover; background-position: center; }
+.btn-det { align-self: flex-start; margin-top: auto; background: #8b5cf6; color: #fff !important;
+           padding: 10px 20px; border-radius: 999px; font-weight: 600; text-decoration: none; }
+@media (max-width: 1000px) { .dash { grid-template-columns: 1fr; } }
+"""
+CSS += CSS_DASH
 
 HTML_HERO = """
 <div class="hero">
@@ -257,6 +399,200 @@ def excluir_observacao(obs_id):
 
 
 # ---------------------------------------------------------------------------
+# DASHBOARD (tela "Início")
+# ---------------------------------------------------------------------------
+LATITUDE, LONGITUDE = -23.55, -46.63   # ajuste para a sua cidade (usado só no clima)
+SINODICO = 29.530588853                # duração do ciclo lunar, em dias
+DIAS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
+MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
+         "agosto", "setembro", "outubro", "novembro", "dezembro"]
+
+# DADOS DE EXEMPLO (não há endpoint de planetas na API): nome, onde/quando, visibilidade, cor
+PLANETAS_EXEMPLO = [
+    ("Vênus", "Oeste · 18:30", "Baixa", "#f2c94c", get_base64_planeta("venus.png") or "https://upload.wikimedia.org/wikipedia/commons/thumb/0/08/Venus_2_Approach_Image.jpg/240px-Venus_2_Approach_Image.jpg", 28),
+    ("Júpiter", "Leste · 20:10", "Alta", "#d9a066", get_base64_planeta("jupiter.png") or "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e2/Jupiter.jpg/240px-Jupiter.jpg", 42),
+    ("Saturno", "Norte · 19:40", "Média", "#e0b96a", get_base64_planeta("saturno.png") or "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c7/Saturn_during_Equinox.jpg/240px-Saturn_during_Equinox.jpg", 38),
+    ("Marte", "Madrugada · 04:15", "Média", "#e5534b", get_base64_planeta("marte.png") or "https://upload.wikimedia.org/wikipedia/commons/thumb/0/02/OSIRIS_Mars_true_color.jpg/240px-OSIRIS_Mars_true_color.jpg", 24),
+]
+
+
+def fase_lua():
+    """Fase da Lua calculada a partir do ciclo sinódico (sem API externa)."""
+    jd = datetime.now(timezone.utc).timestamp() / 86400 + 2440587.5
+    idade = (jd - 2451550.1) % SINODICO          # 2000-01-06 = lua nova de referência
+    p = idade / SINODICO                          # 0 nova · .25 quarto cresc. · .5 cheia
+    ilum = (1 - math.cos(2 * math.pi * p)) / 2
+    for limite, nome in [(.03, "Nova"), (.22, "Crescente"), (.28, "Quarto crescente"),
+                         (.47, "Crescente gibosa"), (.53, "Cheia"), (.72, "Minguante gibosa"),
+                         (.78, "Quarto minguante"), (.97, "Minguante")]:
+        if p < limite:
+            break
+    else:
+        nome = "Nova"
+    nasce = (6 + p * 24) % 24                     # estimativa grosseira (~50 min/dia)
+    se_poe = (nasce + 12) % 24
+    hhmm = lambda h: f"{int(h):02d}:{int((h % 1) * 60):02d}"
+    return p, nome, round(ilum * 100), hhmm(nasce), hhmm(se_poe)
+
+
+def lua_svg(p, r=40):
+    """Desenha a Lua iluminada de acordo com a fase p (0..1)."""
+    c = r + 8
+    crescendo = p < .5
+    q = p if crescendo else 1 - p
+    rx = abs(math.cos(2 * math.pi * q)) * r
+    sweep = 0 if q < .25 else 1
+    luz = f"M{c},{c-r} A{r},{r} 0 0 1 {c},{c+r} A{rx:.2f},{r} 0 0 {sweep} {c},{c-r} Z"
+    espelho = "" if crescendo else f' transform="translate({2*c},0) scale(-1,1)"'
+    return (f'<svg viewBox="0 0 {2*c} {2*c}"><circle cx="{c}" cy="{c}" r="{r}" fill="#14122b" '
+            f'stroke="rgba(255,255,255,.08)"/><path d="{luz}" fill="#efe4c4"{espelho}/></svg>')
+
+
+def _clima():
+    """Nuvens (%), temperatura (°C) e umidade (%) via Open-Meteo (sem chave)."""
+    try:
+        r = requests.get("https://api.open-meteo.com/v1/forecast", timeout=TIMEOUT, params={
+            "latitude": LATITUDE, "longitude": LONGITUDE, "timezone": "auto",
+            "current": "temperature_2m,relative_humidity_2m,cloud_cover"})
+        r.raise_for_status()
+        c = r.json()["current"]
+        return round(c["cloud_cover"]), round(c["temperature_2m"]), round(c["relative_humidity_2m"])
+    except (requests.RequestException, ValueError, KeyError):
+        return None
+
+
+def _apod():
+    try:
+        r = requests.get(f"{API_BASE}/api/dashboard/hoje", timeout=TIMEOUT)
+        r.raise_for_status()
+        return r.json()
+    except (requests.RequestException, ValueError):
+        return None
+
+
+CEU_SVG = """<svg class="ceu-svg" viewBox="0 0 420 220"><defs><radialGradient id="gv">
+<stop offset="0" stop-color="#ff5a6e"/><stop offset="1" stop-color="#7a1030" stop-opacity=".15"/>
+</radialGradient></defs>
+<circle cx="210" cy="110" r="200" fill="none" stroke="#8b5cf6" stroke-opacity=".15"/>
+<circle cx="210" cy="110" r="150" fill="none" stroke="#8b5cf6" stroke-opacity=".12"/>
+<circle cx="300" cy="110" r="100" fill="url(#gv)" opacity=".45"/>
+<circle cx="300" cy="110" r="72" fill="url(#gv)" opacity=".65"/>
+<circle cx="300" cy="110" r="46" fill="url(#gv)"/>
+<circle cx="300" cy="110" r="7" fill="#fff"/><text x="314" y="115" fill="#fff" font-size="13" font-weight="600">Você</text>
+<circle cx="120" cy="70" r="18" fill="#f2c94c" opacity=".25"/><circle cx="120" cy="70" r="9" fill="#f2c94c"/>
+<circle cx="165" cy="150" r="18" fill="#2dd4bf" opacity=".25"/><circle cx="165" cy="150" r="6" fill="#2dd4bf"/>
+<circle cx="55" cy="165" r="5" fill="#3b82f6"/></svg>"""
+
+
+def montar_dashboard():
+    """Monta o HTML completo do dashboard (Início)."""
+    agora = datetime.now()
+    h = agora.hour
+    saudacao = "Bom dia" if 5 <= h < 12 else "Boa tarde" if 12 <= h < 18 else "Boa noite"
+    data_txt = f"{DIAS[agora.weekday()]}, {agora.day} de {MESES[agora.month - 1]}"
+
+    p, fase, ilum, nasce, se_poe = fase_lua()
+    nuvens, temp, umid = _clima() or (None, None, None)
+    fmt = lambda v, un: "—" if v is None else f"{v}{un}"
+
+    # --- CORREÇÃO AQUI: Descompactando as 6 variáveis corretamente ---
+    planetas = "".join(
+        f'<div class="planeta">'
+        f'  <img src="{img_url}" class="img-planeta" style="width:{tam}px; height:{tam}px;" alt="{n}">'
+        f'  <div class="info"><b>{n}</b><span>{onde}</span></div>'
+        f'  <div class="badge b-{vis.lower().replace("é", "e")}">{vis}</div>'
+        f'</div>'
+        for n, onde, vis, cor, img_url, tam in PLANETAS_EXEMPLO)
+
+    d = _apod()
+    
+    # Imagem padrão (fallback) caso a API falhe
+    fallback_img = "https://images.unsplash.com/photo-1462331940025-496dfbfc7564?q=80&w=800&auto=format&fit=crop"
+    
+    if d:
+        link = d.get("hdurl") or d.get("url_imagem") or "#"
+        img = d.get("url_imagem") if d.get("media_type") == "image" else fallback_img
+        titulo = escape(d.get("titulo") or "Nebulosa em Detalhe")
+        descricao = escape(d.get("descricao") or "Uma das nebulosas planetárias mais famosas do céu.")
+        
+        apod = (
+            f'<div class="dcard apod">'
+            f'  <div class="txt">'
+            f'    <div class="tag2">FOTO ASTRONÔMICA DO DIA</div>'
+            f'    <h2>{titulo}</h2>'
+            f'    <p>{descricao}</p>'
+            f'    <a class="btn-det" href="{escape(link)}" target="_blank">Ver detalhes ›</a>'
+            f'  </div>'
+            f'  <div class="img" style=\'background-image: url("{img}");\'></div>'
+            f'</div>'
+        )
+    else:
+        apod = (
+            f'<div class="dcard apod">'
+            f'  <div class="txt">'
+            f'    <div class="tag2">FOTO ASTRONÔMICA DO DIA</div>'
+            f'    <h2>Nebulosa em Detalhe</h2>'
+            f'    <p>Uma das nebulosas planetárias mais famosas do céu, revelando sua estrutura em cores impressionantes.</p>'
+            f'    <a class="btn-det" href="#" target="_blank">Ver detalhes ›</a>'
+            f'  </div>'
+            f'  <div class="img" style=\'background-image: url("{fallback_img}");\'></div>'
+            f'</div>'
+        )
+
+    return f"""
+<div class="dash">
+  <div class="dcol">
+    <div><h1>{saudacao}, Observador</h1><div class="data">{data_txt}</div></div>
+    <div class="dcard lua-card">{lua_svg(p)}
+      <div><div class="mini">Fase da Lua</div><div class="lua-nome">{fase}</div>
+      <div style="font-weight:600;margin:4px 0">Iluminação: {ilum}%</div>
+      <div class="amarelo">Nasce ~{nasce} · Se põe ~{se_poe}</div></div></div>
+    <div class="dcard clima">
+      <div><b class="verde">☁️ {fmt(nuvens, "%")}</b><span>Nuvens</span></div>
+      <div><b>🌡️ {fmt(temp, "°C")}</b><span>Temperatura</span></div>
+      <div><b class="azul">💧 {fmt(umid, "%")}</b><span>Umidade</span></div></div>
+    <h3>Visibilidade planetária hoje</h3>
+    <div class="dcard" style="padding:8px 16px">{planetas}</div>
+  </div>
+  <div class="dcol">
+    <div class="dcard"><div class="ceu-head"><div><b>Seu céu esta noite</b>
+      <span class="sub">Explore o universo ao seu redor</span></div>
+      <a class="dash-link" onclick="document.getElementById('nav-mapa').click()">Ver mapa completo ›</a></div>
+      {CEU_SVG}</div>
+    {apod}
+  </div>
+</div>"""
+
+
+# ---------------------------------------------------------------------------
+# Locais (tela "Mapa") e navegação do menu lateral
+# ---------------------------------------------------------------------------
+COLS_LOCAIS = ["id", "nome", "latitude", "longitude", "nivel_poluicao", "descricao"]
+
+
+def listar_locais(busca=""):
+    try:
+        r = requests.get(f"{API_BASE}/api/locais", timeout=TIMEOUT)
+        r.raise_for_status()
+        df = pd.DataFrame(r.json(), columns=COLS_LOCAIS)
+        if busca:
+            df = df[df["nome"].str.contains(busca, case=False, na=False)]
+        return df
+    except (requests.RequestException, ValueError) as erro:
+        gr.Warning(f"Falha ao listar locais: {erro}")
+        return pd.DataFrame({"erro": [str(erro)]})
+
+
+PAGINAS = ["inicio", "mapa", "diario"]
+
+
+def ir_para(pagina):
+    """Mostra uma página e destaca o item correspondente do menu."""
+    return ([gr.update(visible=(p == pagina)) for p in PAGINAS]
+            + [gr.update(variant="primary" if p == pagina else "secondary") for p in PAGINAS])
+
+
+# ---------------------------------------------------------------------------
 # Layout Gradio: tela inicial + app com 3 abas
 # ---------------------------------------------------------------------------
 with gr.Blocks(title="AstroLog", css=CSS) as demo:
@@ -267,59 +603,90 @@ with gr.Blocks(title="AstroLog", css=CSS) as demo:
         btn_comecar = gr.Button("Comece agora", elem_id="btn-comecar")
 
     # ---------- APP PRINCIPAL (escondido até clicar no botão) ----------
-    with gr.Column(visible=False) as tela_app:
-        gr.Markdown("# 🔭 AstroLog — Diário de Observação Astronômica")
+    with gr.Column(visible=False, elem_id="tela-app") as tela_app:
+        # Topbar (Agora fixa via CSS)
+        with gr.Row(elem_id="topbar"):
+            gr.HTML('<div class="logo">🌙 AstroLog</div>', elem_id="topbar-logo")
+            busca = gr.Textbox(show_label=False, container=False, elem_id="busca",
+                               scale=0, min_width=0,
+                               placeholder="🔍  Buscar local de observação...")
 
-        with gr.Tab("Dashboard de Hoje"):
-            btn_nasa = gr.Button("Carregar dados da NASA", variant="primary")
-            texto_nasa = gr.Markdown()
-            imagem_nasa = gr.Image(label="Imagem do dia", height=400)
-            btn_nasa.click(carregar_dashboard, inputs=None,
-                           outputs=[texto_nasa, imagem_nasa])
+        # Corpo (Ajustado via CSS com margens para compensar os fixos)
+        with gr.Row(elem_id="corpo", equal_height=False):
+            with gr.Column(scale=0, min_width=210, elem_id="sidebar"):
+                # Botões do menu (mantidos)
+                nav_inicio = gr.Button("🏠  Início", variant="primary",
+                                       elem_id="nav-inicio", elem_classes="nav-btn")
+                nav_mapa = gr.Button("📍  Mapa", variant="secondary",
+                                     elem_id="nav-mapa", elem_classes="nav-btn")
+                nav_diario = gr.Button("📒  Diário", variant="secondary",
+                                       elem_id="nav-diario", elem_classes="nav-btn")
 
-        with gr.Tab("Registrar Observação"):
-            with gr.Row():
-                astro = gr.Textbox(label="Astro observado",
-                                   placeholder="Ex.: Júpiter")
-                tipo = gr.Dropdown(TIPOS_ASTRO, label="Tipo de astro",
-                                   value="planeta")
-            equipamento = gr.Textbox(label="Equipamento",
-                                     placeholder="Ex.: Telescópio Refletor 114mm")
-            data_hora = gr.Textbox(label="Data e hora (ISO 8601)",
-                                   placeholder="2025-03-10T22:30:00")
-            local = gr.Textbox(label="Local", placeholder="Cidade ou coordenadas")
-            with gr.Row():
-                poluicao = gr.Dropdown(POLUICAO, label="Poluição luminosa",
-                                       value="baixa")
-                visibilidade = gr.Dropdown(VISIBILIDADE, label="Visibilidade",
-                                           value="boa")
-            anotacoes = gr.Textbox(label="Anotações", lines=3)
-            btn_salvar = gr.Button("Salvar", variant="primary")
-            msg_salvar = gr.Markdown()
-            btn_salvar.click(
-                registrar_observacao,
-                inputs=[astro, tipo, equipamento, data_hora, local,
-                        poluicao, visibilidade, anotacoes],
-                outputs=msg_salvar,
-            )
+            with gr.Column(scale=1, elem_id="conteudo"):
+                # ... (conteúdo mantido igual) ...
+                with gr.Column(visible=True) as pg_inicio:
+                    dash_html = gr.HTML()
 
-        with gr.Tab("Histórico de Observações"):
-            btn_listar = gr.Button("Listar", variant="primary")
-            df_hist = gr.Dataframe(label="Observações registradas")
-            with gr.Row():
-                id_excluir = gr.Textbox(label="ID para excluir", scale=1)
-                btn_excluir = gr.Button("Excluir", variant="stop", scale=1)
-            msg_excluir = gr.Markdown()
+                with gr.Column(visible=False) as pg_mapa:
+                    gr.Markdown("## 📍 Locais de observação")
+                    df_locais = gr.Dataframe(label="Locais cadastrados")
 
-            btn_listar.click(listar_observacoes, inputs=None, outputs=df_hist)
-            btn_excluir.click(excluir_observacao, inputs=id_excluir,
-                              outputs=msg_excluir)
+                with gr.Column(visible=False) as pg_diario:
+                    gr.Markdown("## 📒 Diário de observações")
+                    with gr.Tab("Registrar Observação"):
+                        with gr.Row():
+                            astro = gr.Textbox(label="Astro observado",
+                                               placeholder="Ex.: Júpiter")
+                            tipo = gr.Dropdown(TIPOS_ASTRO, label="Tipo de astro",
+                                               value="planeta")
+                        equipamento = gr.Textbox(label="Equipamento",
+                                                 placeholder="Ex.: Telescópio Refletor 114mm")
+                        data_hora = gr.Textbox(label="Data e hora (ISO 8601)",
+                                               placeholder="2025-03-10T22:30:00")
+                        local = gr.Textbox(label="Local", placeholder="Cidade ou coordenadas")
+                        with gr.Row():
+                            poluicao = gr.Dropdown(POLUICAO, label="Poluição luminosa",
+                                                   value="baixa")
+                            visibilidade = gr.Dropdown(VISIBILIDADE, label="Visibilidade",
+                                                       value="boa")
+                        anotacoes = gr.Textbox(label="Anotações", lines=3)
+                        btn_salvar = gr.Button("Salvar", variant="primary")
+                        msg_salvar = gr.Markdown()
+                        btn_salvar.click(
+                            registrar_observacao,
+                            inputs=[astro, tipo, equipamento, data_hora, local,
+                                    poluicao, visibilidade, anotacoes],
+                            outputs=msg_salvar,
+                        )
 
-    # ---------- Clique em "Comece agora": troca de tela e carrega o dashboard ----------
+                    with gr.Tab("Histórico de Observações"):
+                        btn_listar = gr.Button("Listar", variant="primary")
+                        df_hist = gr.Dataframe(label="Observações registradas")
+                        with gr.Row():
+                            id_excluir = gr.Textbox(label="ID para excluir", scale=1)
+                            btn_excluir = gr.Button("Excluir", variant="stop", scale=1)
+                        msg_excluir = gr.Markdown()
+
+                        btn_listar.click(listar_observacoes, inputs=None, outputs=df_hist)
+                        btn_excluir.click(excluir_observacao, inputs=id_excluir,
+                                          outputs=msg_excluir)
+
+    # ---------- Menu lateral e busca ----------
+    saidas_nav = [pg_inicio, pg_mapa, pg_diario, nav_inicio, nav_mapa, nav_diario]
+    nav_inicio.click(lambda: ir_para("inicio"), None, saidas_nav).then(
+        montar_dashboard, None, dash_html)
+    nav_mapa.click(lambda: ir_para("mapa"), None, saidas_nav).then(
+        listar_locais, busca, df_locais)
+    nav_diario.click(lambda: ir_para("diario"), None, saidas_nav).then(
+        listar_observacoes, None, df_hist)
+    busca.submit(lambda: ir_para("mapa"), None, saidas_nav).then(
+        listar_locais, busca, df_locais)
+
+    # ---------- "Comece agora": esconde a tela inicial e abre o dashboard ----------
     btn_comecar.click(
         entrar_no_app, inputs=None, outputs=[tela_inicio, tela_app]
     ).then(
-        carregar_dashboard, inputs=None, outputs=[texto_nasa, imagem_nasa]
+        montar_dashboard, inputs=None, outputs=dash_html
     ).then(
         listar_observacoes, inputs=None, outputs=df_hist
     )
