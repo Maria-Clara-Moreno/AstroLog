@@ -6,6 +6,7 @@ Rodar (com a API já em execução em http://127.0.0.1:5000):
 import base64
 import io
 import math
+import random
 import os
 from datetime import datetime, timezone
 from html import escape
@@ -284,6 +285,84 @@ CSS_DASH = """
 @media (max-width: 1000px) { .dash { grid-template-columns: 1fr; } }
 """
 CSS += CSS_DASH
+
+CSS_MAPA = """
+/* ===== Tela Mapa ===== */
+#side-tag { margin-top: auto !important; background: rgba(255,255,255,.04) !important;
+            border-radius: 14px !important; padding: 14px !important; border: none !important; }
+.side-tag { color: #a5a3c4; font-size: .8rem; line-height: 1.45; }
+.side-tag .estrela { color: #f2c94c; font-size: 1rem; display: block; margin-bottom: 4px; }
+
+.mapa { position: relative; height: calc(100vh - 114px); min-height: 480px; overflow: hidden;
+        border-radius: 20px; border: 1px solid rgba(120,130,255,.15);
+        background: radial-gradient(ellipse at 35% 43%, #12123a 0%, #0a0b20 55%, #07081a 100%); }
+.mapa .estrelas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.loc-radio { position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0; }
+
+.anel-d { position: absolute; left: 35.3%; top: 43.3%; transform: translate(-50%, -50%);
+          border-radius: 50%; border: 1px dashed rgba(139,92,246,.22); pointer-events: none; }
+.voce { position: absolute; left: 35.3%; top: 43.3%; width: 0; height: 0; }
+.voce .halo { position: absolute; left: 0; top: 0; width: 230px; height: 230px; border-radius: 50%;
+              transform: translate(-50%, -50%);
+              background: radial-gradient(circle, rgba(139,92,246,.7) 0%, rgba(124,58,237,.45) 30%,
+                          rgba(109,40,217,.18) 58%, transparent 70%); }
+.voce .ponto { position: absolute; left: 0; top: 0; width: 13px; height: 13px; border-radius: 50%;
+               background: #fff; transform: translate(-50%, -50%); box-shadow: 0 0 10px #fff; }
+.voce .nome { position: absolute; left: 14px; top: 0; transform: translateY(-50%); color: #fff;
+              font-size: .8rem; font-weight: 600; }
+
+.c-verde { --c: #22d3a0; } .c-azul { --c: #2ea8ff; }
+.c-amarelo { --c: #f5b93a; } .c-vermelho { --c: #f43f5e; }
+.mk { position: absolute; width: 0; height: 0; cursor: pointer; }
+.mk .glow, .mk .ring, .mk .core { position: absolute; left: 0; top: 0; border-radius: 50%;
+                                  transform: translate(-50%, -50%); }
+.mk .glow { width: 120px; height: 120px;
+            background: radial-gradient(circle, color-mix(in srgb, var(--c) 45%, transparent) 0%,
+                        color-mix(in srgb, var(--c) 15%, transparent) 55%, transparent 70%); }
+.mk .ring { width: 44px; height: 44px; border: 2px solid var(--c);
+            background: color-mix(in srgb, var(--c) 18%, transparent); transition: transform .15s; }
+.mk .core { width: 14px; height: 14px; background: var(--c); box-shadow: 0 0 10px var(--c); }
+.mk:hover .ring { transform: translate(-50%, -50%) scale(1.15); }
+.mk .mk-nome { position: absolute; left: 34px; top: 0; transform: translateY(-50%); width: 110px;
+               color: #fff; font-size: .8rem; font-weight: 600; line-height: 1.2;
+               text-shadow: 0 1px 6px rgba(0,0,0,.8); }
+
+.bussola { position: absolute; top: 18px; right: 18px; width: 40px; height: 40px; border-radius: 50%;
+           border: 1px solid rgba(139,92,246,.6); background: rgba(20,16,50,.7); color: #fff;
+           display: flex; flex-direction: column; align-items: center; justify-content: center;
+           font-size: .55rem; font-weight: 700; line-height: 1; gap: 2px; }
+.legenda { position: absolute; left: 12px; bottom: 12px; background: rgba(15,14,40,.75);
+           border: 1px solid rgba(255,255,255,.06); border-radius: 12px; padding: 12px 16px; }
+.legenda div { display: flex; align-items: center; gap: 10px; color: #cfcde6; font-size: .8rem;
+               margin: 5px 0; }
+.legenda i { width: 12px; height: 12px; border-radius: 50%; background: var(--c); display: inline-block; }
+.escala { position: absolute; left: 45%; bottom: 14px; color: #cfcde6; font-size: .75rem; width: 110px; }
+.escala .nums { display: flex; justify-content: space-between; }
+.escala .barra { height: 6px; border: 1px solid #cfcde6; border-top: none; margin-top: 6px; }
+
+.popup { display: none; position: absolute; right: 14px; bottom: 14px; width: min(38%, 330px);
+         background: rgba(18,18,48,.96); border: 1px solid rgba(139,92,246,.25); border-radius: 16px;
+         overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+.popup .foto { display: block; width: 100%; height: 110px; object-fit: cover; }
+.popup .fechar { position: absolute; top: 8px; right: 10px; color: #cfcde6; cursor: pointer;
+                 font-size: .9rem; width: 22px; height: 22px; text-align: center; line-height: 22px;
+                 border-radius: 50%; background: rgba(0,0,0,.35); }
+.p-body { padding: 14px 16px 16px; }
+.p-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.p-head b { color: #fff; font-size: 1.02rem; }
+.bortle { padding: 4px 12px; border-radius: 999px; font-size: .75rem; font-weight: 700; color: var(--c);
+          background: color-mix(in srgb, var(--c) 18%, transparent); border: 1px solid var(--c); }
+.p-sub { color: #a5a3c4; font-size: .8rem; margin: 6px 0 14px; }
+.p-stats { display: flex; justify-content: space-between; margin-bottom: 14px; }
+.p-stats b { display: block; color: #fff; font-size: 1.05rem; }
+.p-stats span { color: #a5a3c4; font-size: .72rem; }
+.p-btns { display: flex; gap: 10px; }
+.p-btns a { flex: 1; text-align: center; padding: 11px 0; border-radius: 999px; font-weight: 600;
+            cursor: pointer; text-decoration: none; font-size: .9rem; }
+.p-plan { background: #8b5cf6; color: #fff !important; }
+.p-rota { background: rgba(255,255,255,.06); color: #fff !important; border: 1px solid rgba(255,255,255,.12); }
+"""
+CSS += CSS_MAPA
 
 HTML_HERO = """
 <div class="hero">
@@ -567,6 +646,103 @@ def montar_dashboard():
 # ---------------------------------------------------------------------------
 # Locais (tela "Mapa") e navegação do menu lateral
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# MAPA (tela "Mapa") — locais de exemplo; x/y são a posição em % do mapa
+# ---------------------------------------------------------------------------
+def foto_local(arquivo, largura=640):
+    """Lê img/<arquivo>, reduz para uma miniatura JPEG e devolve um data URI (leve p/ a página)."""
+    pasta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "img")
+    try:
+        with Image.open(os.path.join(pasta, arquivo)) as im:
+            im = im.convert("RGB")
+            im.thumbnail((largura, largura))
+            buf = io.BytesIO()
+            im.save(buf, "JPEG", quality=82)
+        return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+    except (FileNotFoundError, OSError):
+        print(f"[AVISO] foto não encontrada: img/{arquivo}")
+        return ""
+
+
+LOCAIS_EXEMPLO = [
+    dict(id="serra", nome="Serra do Campo Escuro", cor="verde", foto="serra_do_campo.png", foco="50% 62%", x=23.4, y=18.4, bortle=2,
+         km=42, minutos=38, mag="21.9", nuvens=12, qualidade="Excelente"),
+    dict(id="vale", nome="Vale das Estrelas", cor="amarelo", foto="vale_das_estrelas.png", foco="50% 50%", x=57.4, y=19.5, bortle=5,
+         km=35, minutos=31, mag="20.4", nuvens=28, qualidade="Regular"),
+    dict(id="pico", nome="Pico da Neblina", cor="azul", foto="pico_da_neblina.png", foco="50% 30%", x=55.6, y=52.5, bortle=3,
+         km=18, minutos=22, mag="21.3", nuvens=18, qualidade="Bom"),
+    dict(id="morro", nome="Morro do Horizonte", cor="vermelho", foto="morro_do_horizonte.png", foco="50% 52%", x=15.0, y=65.0, bortle=7,
+         km=9, minutos=14, mag="18.9", nuvens=45, qualidade="Ruim"),
+]
+
+
+def _cabecalho_popup(l):
+    uri = foto_local(l["foto"])
+    if uri:
+        return f'<img class="foto" src="{uri}" alt="{escape(l["nome"])}" style="object-position:{l["foco"]}">'
+    return (f'<svg class="foto" viewBox="0 0 300 40" preserveAspectRatio="none"><defs>'
+            f'<linearGradient id="ceu-{l["id"]}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0f2a55"/>'
+            f'<stop offset="1" stop-color="#2b5c9a"/></linearGradient></defs>'
+            f'<rect width="300" height="40" fill="url(#ceu-{l["id"]})"/>'
+            f'<path d="M0,40 L0,28 L40,18 L70,26 L120,8 L170,24 L210,14 L260,26 L300,16 L300,40 Z" fill="#0a0f24"/></svg>')
+
+
+def montar_mapa_html():
+    from urllib.parse import quote
+    rnd = random.Random(7)
+    estrelas = "".join(
+        f'<circle cx="{rnd.uniform(0, 1000):.0f}" cy="{rnd.uniform(0, 560):.0f}" '
+        f'r="{rnd.choice([.6, .8, 1, 1.4]):.1f}" fill="{rnd.choice(["#fff", "#fff", "#9ec5ff", "#ffe29a"])}" '
+        f'opacity="{rnd.uniform(.25, .9):.2f}"/>' for _ in range(170))
+    linhas = "".join(
+        f'<polyline points="{pts}" fill="none" stroke="#6d7bff" stroke-opacity=".28"/>'
+        for pts in ("690,110 750,150 820,140 880,205", "120,300 180,255 250,275",
+                    "800,330 870,385 950,350", "300,470 360,420 450,430"))
+    fundo = f'<svg class="estrelas" viewBox="0 0 1000 560" preserveAspectRatio="none">{linhas}{estrelas}</svg>'
+    aneis = "".join(f'<div class="anel-d" style="width:{d}px;height:{d}px"></div>' for d in (190, 400, 640))
+
+    radios = "".join(f'<input type="radio" name="loc" id="loc-{l["id"]}" class="loc-radio"'
+                     f'{" checked" if i == 0 else ""}>' for i, l in enumerate(LOCAIS_EXEMPLO))
+    radios += '<input type="radio" name="loc" id="loc-nenhum" class="loc-radio">'
+    regras = "".join(f'#loc-{l["id"]}:checked ~ .mapa .popup-{l["id"]}{{display:block}}'
+                     f'#loc-{l["id"]}:checked ~ .mapa .mk-{l["id"]} .ring{{transform:translate(-50%,-50%) scale(1.2);'
+                     f'box-shadow:0 0 18px var(--c)}}' for l in LOCAIS_EXEMPLO)
+
+    marcadores = "".join(
+        f'<label for="loc-{l["id"]}" class="mk mk-{l["id"]} c-{l["cor"]}" style="left:{l["x"]}%;top:{l["y"]}%">'
+        f'<span class="glow"></span><span class="ring"></span><span class="core"></span>'
+        f'<span class="mk-nome">{escape(l["nome"])}</span></label>' for l in LOCAIS_EXEMPLO)
+
+    popups = "".join(
+        f'<div class="popup popup-{l["id"]} c-{l["cor"]}">'
+        f'<label for="loc-nenhum" class="fechar">✕</label>'
+        f'{_cabecalho_popup(l)}'
+        f'<div class="p-body"><div class="p-head"><b>{escape(l["nome"])}</b>'
+        f'<span class="bortle">Bortle {l["bortle"]}</span></div>'
+        f'<div class="p-sub">{l["km"]} km de você · {l["minutos"]} min de carro</div>'
+        f'<div class="p-stats"><div><b>{l["mag"]}</b><span>mag/arcsec²</span></div>'
+        f'<div><b>{l["nuvens"]}%</b><span>nuvens hoje</span></div>'
+        f'<div><b>{l["qualidade"]}</b><span>qualidade</span></div></div>'
+        f'<div class="p-btns"><a class="p-plan" onclick="document.getElementById(\'nav-diario\').click()">'
+        f'Planejar sessão</a><a class="p-rota" target="_blank" '
+        f'href="https://www.google.com/maps/search/?api=1&query={quote(l["nome"])}">Rota</a></div></div></div>'
+        for l in LOCAIS_EXEMPLO)
+
+    legenda = "".join(f'<div class="c-{c}"><i></i>{n}</div>' for c, n in
+                      [("verde", "Excelente"), ("azul", "Bom"), ("amarelo", "Regular"), ("vermelho", "Ruim")])
+    bussola = ('<div class="bussola">N<svg width="14" height="14" viewBox="0 0 14 14">'
+               '<polygon points="7,1 12,13 7,10 2,13" fill="#fff"/></svg></div>')
+    escala = ('<div class="escala"><div class="nums"><span>0</span><span>25</span><span>50 km</span></div>'
+              '<div class="barra"></div></div>')
+
+    return (f'<style>{regras}</style><div class="mapa-wrap">{radios}<div class="mapa">{fundo}{aneis}'
+            f'<div class="voce"><div class="halo"></div><div class="ponto"></div><div class="nome">Você</div></div>'
+            f'{marcadores}{bussola}<div class="legenda">{legenda}</div>{escala}{popups}</div></div>')
+
+
+MAPA_HTML = montar_mapa_html()
+
+
 COLS_LOCAIS = ["id", "nome", "latitude", "longitude", "nivel_poluicao", "descricao"]
 
 
@@ -621,6 +797,8 @@ with gr.Blocks(title="AstroLog", css=CSS) as demo:
                                      elem_id="nav-mapa", elem_classes="nav-btn")
                 nav_diario = gr.Button("📒  Diário", variant="secondary",
                                        elem_id="nav-diario", elem_classes="nav-btn")
+                gr.HTML('<div class="side-tag"><span class="estrela">☆</span>'
+                        'Céus mais escuros para um amanhã mais brilhante.</div>', elem_id="side-tag")
 
             with gr.Column(scale=1, elem_id="conteudo"):
                 # ... (conteúdo mantido igual) ...
@@ -628,8 +806,9 @@ with gr.Blocks(title="AstroLog", css=CSS) as demo:
                     dash_html = gr.HTML()
 
                 with gr.Column(visible=False) as pg_mapa:
-                    gr.Markdown("## 📍 Locais de observação")
-                    df_locais = gr.Dataframe(label="Locais cadastrados")
+                    gr.HTML(MAPA_HTML)
+                    with gr.Accordion("Locais cadastrados (API)", open=False):
+                        df_locais = gr.Dataframe(label="Locais cadastrados")
 
                 with gr.Column(visible=False) as pg_diario:
                     gr.Markdown("## 📒 Diário de observações")
