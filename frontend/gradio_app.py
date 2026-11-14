@@ -16,8 +16,45 @@ import pandas as pd
 import requests
 from PIL import Image
 
-API_BASE = "http://127.0.0.1:5000"
+API_BASE = os.getenv("ASTROLOG_API", "http://127.0.0.1:5000")
 TIMEOUT = 15
+
+# Script que injeta a máscara de digitação assim que a página carrega
+INPUT_MASK_JS = """
+<script>
+document.addEventListener('input', function(e) {
+    // 1. ID para excluir (Apenas números)
+    if (e.target.closest('#id-excluir')) {
+        let val = e.target.value;
+        let novoVal = val.replace(/[^0-9]/g, ''); // Remove tudo que não for número
+        if (val !== novoVal) {
+            e.target.value = novoVal;
+        }
+    }
+    
+    // 2. Data e Hora (Apenas números, -, :, T e t)
+    if (e.target.closest('#data-hora')) {
+        let val = e.target.value;
+        let novoVal = val.replace(/[^0-9\\-\\:Tt]/g, ''); // Remove caracteres inválidos para ISO 8601
+        if (val !== novoVal) {
+            e.target.value = novoVal;
+        }
+    }
+}, true); // O 'true' ativa o modo de captura, funcionando mesmo se o Gradio recriar o campo
+</script>
+"""
+
+def motivo_falha(erro):
+    """Explica em português (texto simples) por que uma chamada à API falhou."""
+    if isinstance(erro, requests.Timeout):
+        return f"A API demorou demais para responder em {API_BASE}."
+    if isinstance(erro, requests.ConnectionError):
+        return (f"A API não respondeu em {API_BASE}. Ela provavelmente não está rodando "
+                "ou caiu ao iniciar (por exemplo, porque o MariaDB não estava ligado).")
+    if isinstance(erro, requests.HTTPError) and erro.response is not None:
+        return (f"A API respondeu com erro {erro.response.status_code}. "
+                "Veja a mensagem no terminal onde ela está rodando.")
+    return f"Resposta inesperada da API: {erro}"
 
 TIPOS_ASTRO = ["planeta", "estrela", "nebula", "galaxia", "lua", "outro"]
 POLUICAO = ["baixa", "media", "alta"]
@@ -222,7 +259,7 @@ CSS_DASH = """
 
 .nav-btn { background: transparent !important; color: #cfcde6 !important; border: none !important;
            box-shadow: none !important; justify-content: flex-start !important; text-align: left;
-           padding: 12px 16px !important; border-radius: 12px !important; font-weight: 600 !important; }
+           padding: 12px 16px !important; border-radius: 5px !important; font-weight: 600 !important; }
 .nav-btn:hover { background: rgba(139,92,246,.15) !important; }
 .nav-btn.primary { background: #8b5cf6 !important; color: #fff !important; }
 
@@ -364,6 +401,97 @@ CSS_MAPA = """
 """
 CSS += CSS_MAPA
 
+CSS_DIARIO = """
+/* ===== Tema do app (vale para os componentes padrão do Gradio dentro do app) ===== */
+#tela-app {
+    --body-text-color: #e8e6f5; --body-text-color-subdued: #a5a3c4;
+    --background-fill-primary: #0f0f2a; --background-fill-secondary: #14143a;
+    --block-background-fill: rgba(22,24,52,.75); --block-border-color: rgba(255,255,255,.07);
+    --block-border-width: 1px; --block-radius: 16px; --panel-background-fill: rgba(22,24,52,.75);
+    --block-label-background-fill: transparent; --block-label-text-color: #cfcde6;
+    --block-title-text-color: #cfcde6; --border-color-primary: rgba(255,255,255,.08);
+    --input-background-fill: #0d0d26; --input-border-color: rgba(139,92,246,.28);
+    --input-border-color-focus: #8b5cf6; --input-placeholder-color: #6f6d92; --input-radius: 12px;
+    --color-accent: #8b5cf6; --border-color-accent: #8b5cf6; --color-accent-soft: rgba(139,92,246,.18);
+    --button-primary-background-fill: #8b5cf6; --button-primary-background-fill-hover: #7c4de8;
+    --button-primary-text-color: #fff; --button-primary-border-color: transparent;
+    --button-cancel-background-fill: rgba(244,63,94,.15);
+    --button-cancel-background-fill-hover: rgba(244,63,94,.28);
+    --button-cancel-text-color: #fb7185; --button-cancel-border-color: #f43f5e;
+    --table-even-background-fill: #10102a; --table-odd-background-fill: #15153a;
+    --table-border-color: rgba(255,255,255,.07); --table-row-focus: rgba(139,92,246,.18);
+}
+#tela-app button.primary, #tela-app button.stop { border-radius: 5px !important; font-weight: 600 !important; }
+
+/* ===== Botão "Novo registro" na navbar ===== */
+#btn-novo { margin-left: auto !important; flex: none !important; width: auto !important;
+            min-width: 0 !important; background: #8b5cf6 !important; color: #fff !important;
+            border: none !important; border-radius: 999px !important; font-weight: 600 !important;
+            padding: 11px 24px !important; box-shadow: 0 6px 18px rgba(139,92,246,.35); }
+#btn-novo:hover { background: #7c4de8 !important; }
+
+/* ===== Abas do Diário (viram "pílulas") ===== */
+#diario-tabs { background: transparent !important; border: none !important; }
+#diario-tabs .tab-wrapper, #diario-tabs .tab-container, #diario-tabs .tab-nav
+    { border: none !important; border-bottom: none !important; }
+#diario-tabs .tab-container::after { display: none !important; }
+#diario-tabs button[role="tab"] { background: rgba(255,255,255,.06) !important; color: #cfcde6 !important;
+    border: none !important; border-radius: 999px !important; padding: 8px 20px !important;
+    margin-right: 8px; font-weight: 600 !important; box-shadow: none !important; }
+#diario-tabs button[role="tab"]::after { display: none !important; }
+#diario-tabs button[role="tab"][aria-selected="true"], #diario-tabs button[role="tab"].selected
+    { background: #8b5cf6 !important; color: #fff !important; }
+#diario-tabs .tabitem, #diario-tabs div[role="tabpanel"]
+    { background: transparent !important; border: none !important; padding: 18px 0 0 !important; }
+
+/* ===== Diário: cabeçalho, filtros, lista e detalhes ===== */
+.diario-head h1 { font-size: 1.9rem; font-weight: 800; color: #fff; margin: 0; }
+.diario-head p { color: #a5a3c4; margin: 4px 0 16px; }
+.d-radio { position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0; }
+.d-vazio code { background: rgba(139,92,246,.18); color: #cfc2ff; padding: 2px 8px; border-radius: 6px; }
+.d-vazio { color: #a5a3c4; padding: 40px; text-align: center; border-radius: 16px;
+           background: rgba(22,24,52,.75); border: 1px solid rgba(255,255,255,.06); }
+.d-grid { display: grid; grid-template-columns: minmax(300px, 1fr) 1.15fr; gap: 22px; align-items: start; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.chip { padding: 7px 16px; border-radius: 999px; background: rgba(255,255,255,.06); color: #cfcde6;
+        font-size: .8rem; font-weight: 600; cursor: pointer; }
+.d-lista { display: flex; flex-direction: column; gap: 12px; max-height: calc(100vh - 370px); min-height: 240px;
+           overflow-y: auto; padding: 2px 6px 2px 2px; }
+.d-item { display: flex; gap: 14px; align-items: center; padding: 14px; border-radius: 16px; cursor: pointer;
+          background: rgba(22,24,52,.75); border: 1px solid rgba(255,255,255,.06); }
+.d-item:hover { border-color: rgba(139,92,246,.5); }
+.d-item .ic { width: 52px; height: 52px; border-radius: 50%; background: rgba(255,255,255,.05); flex: none;
+              display: flex; align-items: center; justify-content: center; }
+.d-item .ic svg { width: 36px; height: 36px; }
+.d-item b { display: block; color: #fff; font-size: .95rem; }
+.d-item small { display: block; color: #a5a3c4; font-size: .78rem; margin: 3px 0 7px; }
+.tag-t { display: inline-block; padding: 3px 12px; border-radius: 999px; font-size: .72rem; font-weight: 700; }
+.t-planeta .tag-t { background: #3a2f12; color: #f2c94c; } .t-estrela .tag-t { background: #12304a; color: #38bdf8; }
+.t-nebula .tag-t { background: #3a1239; color: #f472b6; } .t-galaxia .tag-t { background: #0f3a3f; color: #22d3ee; }
+.t-lua .tag-t { background: #2c2f45; color: #cfcde6; } .t-outro .tag-t { background: #2a2250; color: #c4b5fd; }
+.d-det { display: none; padding: 16px; border-radius: 20px; background: rgba(22,24,52,.75);
+         border: 1px solid rgba(255,255,255,.06); }
+.d-banner { position: relative; height: 190px; border-radius: 16px; overflow: hidden; display: flex;
+            align-items: center; justify-content: center;
+            background: radial-gradient(circle at 50% 50%, rgba(139,92,246,.28), transparent 62%), #0b0b24; }
+.d-banner::before, .d-banner::after { content: ""; position: absolute; border-radius: 50%;
+            border: 1px solid rgba(139,92,246,.25); }
+.d-banner::before { width: 230px; height: 230px; } .d-banner::after { width: 330px; height: 330px; opacity: .6; }
+.d-banner svg { position: relative; z-index: 1; height: 150px; width: 150px; }
+.d-det h2 { color: #fff; font-size: 1.4rem; margin: 18px 0 2px; }
+.d-det .quando { color: #a5a3c4; font-size: .85rem; }
+.d-tab { margin-top: 16px; border: 1px solid rgba(255,255,255,.07); border-radius: 14px; overflow: hidden; }
+.d-tab > div { display: flex; justify-content: flex-start; gap: 12px; padding: 11px 16px; font-size: .85rem;
+               border-bottom: 1px solid rgba(255,255,255,.05); }
+.d-tab > div:last-child { border-bottom: none; }
+.d-tab span { color: #a5a3c4; } .d-tab b { color: #fff; text-align: right; }
+.d-notas { margin-top: 14px; padding: 14px 16px; border-radius: 14px; color: #e8e6f5; font-size: .9rem;
+           border: 1px solid rgba(255,255,255,.07); line-height: 1.5; }
+.d-notas small { display: block; color: #a5a3c4; letter-spacing: .08em; font-size: .65rem; margin-bottom: 6px; }
+@media (max-width: 1000px) { .d-grid { grid-template-columns: 1fr; } }
+"""
+CSS += CSS_DIARIO
+
 HTML_HERO = """
 <div class="hero">
   <div class="topo">
@@ -423,7 +551,7 @@ def carregar_dashboard():
 def registrar_observacao(astro, tipo, equipamento, data_hora, local,
                          poluicao, visibilidade, anotacoes):
     if not astro:
-        return "❌ Informe o astro observado."
+        return "❌ Informe o astro observado.", astro, tipo, equipamento, data_hora, local, poluicao, visibilidade, anotacoes
     payload = {
         "astro_observado": astro,
         "tipo_astro": tipo,
@@ -439,10 +567,12 @@ def registrar_observacao(astro, tipo, equipamento, data_hora, local,
                           json=payload, timeout=TIMEOUT)
         if r.status_code == 201:
             d = r.json()
-            return f"✅ Observação registrada! ID = {d['id']}"
-        return f"❌ Erro {r.status_code}: {r.text}"
+            # Retorna mensagem + campos limpos
+            return (f"✅ Observação registrada! ID = {d['id']}",
+                    "", "planeta", "", "", "", "baixa", "boa", "")
+        return f"❌ Erro {r.status_code}: {r.text}", astro, tipo, equipamento, data_hora, local, poluicao, visibilidade, anotacoes
     except requests.RequestException as erro:
-        return f"❌ Falha de conexão: {erro}"
+        return f"❌ {motivo_falha(erro)}", astro, tipo, equipamento, data_hora, local, poluicao, visibilidade, anotacoes
 
 
 # ---------------------------------------------------------------------------
@@ -457,24 +587,24 @@ def listar_observacoes():
             return pd.DataFrame(columns=["id", "astro_observado", "tipo_astro"])
         return pd.DataFrame(dados)
     except (requests.RequestException, ValueError) as erro:
-        gr.Warning(f"Falha ao listar: {erro}")
-        return pd.DataFrame({"erro": [str(erro)]})
+        gr.Warning(motivo_falha(erro))
+        return pd.DataFrame({"erro": [motivo_falha(erro)]})
 
 
 def excluir_observacao(obs_id):
     try:
         obs_id = int(obs_id)
     except (TypeError, ValueError):
-        return "❌ Informe um ID numérico."
+        return "❌ Informe um ID numérico.", obs_id
     try:
         r = requests.delete(f"{API_BASE}/api/observacoes/{obs_id}", timeout=TIMEOUT)
         if r.status_code == 204:
-            return f"✅ Observação {obs_id} excluída."
+            return f"✅ Observação {obs_id} excluída.", ""
         if r.status_code == 404:
-            return f"❌ Observação {obs_id} não encontrada."
-        return f"❌ Erro {r.status_code}: {r.text}"
+            return f"❌ Observação {obs_id} não encontrada.", obs_id
+        return f"❌ Erro {r.status_code}: {r.text}", obs_id
     except requests.RequestException as erro:
-        return f"❌ Falha de conexão: {erro}"
+        return f"❌ {motivo_falha(erro)}", obs_id
 
 
 # ---------------------------------------------------------------------------
@@ -755,8 +885,109 @@ def listar_locais(busca=""):
             df = df[df["nome"].str.contains(busca, case=False, na=False)]
         return df
     except (requests.RequestException, ValueError) as erro:
-        gr.Warning(f"Falha ao listar locais: {erro}")
-        return pd.DataFrame({"erro": [str(erro)]})
+        gr.Warning(motivo_falha(erro))
+        return pd.DataFrame({"erro": [motivo_falha(erro)]})
+
+
+# ---------------------------------------------------------------------------
+# DIÁRIO (aba "Meu diário"): lista + detalhes, tudo com dados reais da API
+# ---------------------------------------------------------------------------
+TIPO_ROTULO = {"planeta": "Planeta", "estrela": "Estrela", "nebula": "Nebulosa",
+               "galaxia": "Galáxia", "lua": "Lua", "outro": "Outro"}
+CHIPS = [("todos", "Todos"), ("planeta", "Planetas"), ("estrela", "Estrelas"), ("lua", "Lua"),
+         ("nebula", "Nebulosas"), ("galaxia", "Galáxias"), ("outro", "Outros")]
+
+DIARIO_DEFS = """<defs>
+<linearGradient id="g-pl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c9824a"/>
+<stop offset=".2" stop-color="#f0d9b0"/><stop offset=".38" stop-color="#b86a3a"/><stop offset=".55" stop-color="#f2e2c0"/>
+<stop offset=".72" stop-color="#c07a45"/><stop offset=".88" stop-color="#e8c99a"/><stop offset="1" stop-color="#a35d34"/></linearGradient>
+<radialGradient id="g-lu" cx=".35" cy=".35" r=".8"><stop offset="0" stop-color="#fff6dc"/><stop offset="1" stop-color="#b9a97f"/></radialGradient>
+<radialGradient id="g-n1"><stop offset="0" stop-color="#ff7ad9" stop-opacity=".95"/><stop offset="1" stop-color="#ff7ad9" stop-opacity="0"/></radialGradient>
+<radialGradient id="g-n2"><stop offset="0" stop-color="#8b5cf6" stop-opacity=".9"/><stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/></radialGradient>
+<radialGradient id="g-ga"><stop offset="0" stop-color="#e6fbff"/><stop offset=".35" stop-color="#22d3ee" stop-opacity=".8"/><stop offset="1" stop-color="#2563eb" stop-opacity="0"/></radialGradient>
+<radialGradient id="g-es"><stop offset="0" stop-color="#fff"/><stop offset=".3" stop-color="#ffe29a" stop-opacity=".7"/><stop offset="1" stop-color="#ffe29a" stop-opacity="0"/></radialGradient>
+<linearGradient id="g-co" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c4b5fd"/><stop offset="1" stop-color="#c4b5fd" stop-opacity="0"/></linearGradient>
+</defs>"""
+
+ARTE = {
+    "planeta": '<circle cx="60" cy="60" r="44" fill="url(#g-pl)"/>',
+    "lua": ('<circle cx="60" cy="60" r="44" fill="url(#g-lu)"/><circle cx="48" cy="50" r="7" fill="#7a6f55" opacity=".35"/>'
+            '<circle cx="72" cy="70" r="5" fill="#7a6f55" opacity=".35"/><circle cx="68" cy="44" r="4" fill="#7a6f55" opacity=".3"/>'),
+    "nebula": ('<circle cx="52" cy="56" r="46" fill="url(#g-n1)"/><circle cx="76" cy="66" r="36" fill="url(#g-n2)"/>'
+               '<circle cx="60" cy="60" r="4" fill="#fff"/>'),
+    "galaxia": ('<g transform="rotate(-28 60 60)"><ellipse cx="60" cy="60" rx="54" ry="20" fill="url(#g-ga)"/>'
+                '<ellipse cx="60" cy="60" rx="28" ry="9" fill="#e6fbff" opacity=".85"/></g>'),
+    "estrela": ('<circle cx="60" cy="60" r="50" fill="url(#g-es)"/>'
+                '<path d="M60 12L64 56 108 60 64 64 60 108 56 64 12 60 56 56Z" fill="#fff"/>'),
+    "outro": ('<circle cx="84" cy="38" r="11" fill="#c4b5fd"/>'
+              '<path d="M76 46L18 102" stroke="url(#g-co)" stroke-width="9" stroke-linecap="round"/>'),
+}
+
+
+def _arte(tipo):
+    return f'<svg viewBox="0 0 120 120">{ARTE[tipo]}</svg>'
+
+
+CABECALHO_DIARIO = ('<div class="diario-head"><h1>Diário de observações</h1>'
+                    '<p>Seus registros do céu, organizados em um só lugar.</p></div>')
+
+
+def montar_diario():
+    """HTML do diário: filtros por tipo, lista de registros e painel de detalhes (CSS puro)."""
+    try:
+        r = requests.get(f"{API_BASE}/api/observacoes", timeout=TIMEOUT)
+        r.raise_for_status()
+        obs = r.json()
+    except (requests.RequestException, ValueError) as erro:
+        return (CABECALHO_DIARIO + '<div class="d-vazio"><b>Não foi possível carregar o diário.</b><br>'
+                f'{escape(motivo_falha(erro))}<br><br>Na pasta do projeto, rode '
+                '<code>docker compose up -d</code> e depois <code>flask --app app run</code>; '
+                'em seguida clique em <b>Diário</b> de novo.</div>')
+    if not obs:
+        return CABECALHO_DIARIO + '<div class="d-vazio">Nenhum registro ainda. Clique em <b>Novo registro</b> para começar.</div>'
+    obs.sort(key=lambda o: o.get("data_hora") or "", reverse=True)
+
+    txt = lambda o, k: escape(str(o.get(k) or "—"))
+    radios = "".join(f'<input type="radio" name="filtro" id="f-{c}" class="d-radio"{" checked" if c == "todos" else ""}>'
+                     for c, _ in CHIPS)
+    radios += "".join(f'<input type="radio" name="obs" id="o-{o["id"]}" class="d-radio"{" checked" if i == 0 else ""}>'
+                      for i, o in enumerate(obs))
+    regras = ""
+    for c, _ in CHIPS:
+        regras += f'#f-{c}:checked ~ .d-grid label[for=f-{c}]{{background:#8b5cf6;color:#fff}}'
+        if c != "todos":
+            regras += f'#f-{c}:checked ~ .d-grid .d-item:not(.t-{c}){{display:none}}'
+    chips = "".join(f'<label for="f-{c}" class="chip">{n}</label>' for c, n in CHIPS)
+
+    itens, detalhes = "", ""
+    for o in obs:
+        i = o["id"]
+        tipo = o.get("tipo_astro") if o.get("tipo_astro") in TIPO_ROTULO else "outro"
+        try:
+            dt = datetime.fromisoformat(o.get("data_hora"))
+        except (TypeError, ValueError):
+            dt = None
+        curta = dt.strftime("%d/%m/%Y %H:%M") if dt else "—"
+        longa = (f"{DIAS[dt.weekday()]}, {dt.day} de {MESES[dt.month - 1]} de {dt.year} • {dt:%H:%M}"
+                 if dt else "Data não informada")
+        notas = escape(o.get("anotacoes") or "Sem anotações.").replace("\n", "<br>")
+        regras += (f'#o-{i}:checked ~ .d-grid .det-{i}{{display:block}}'
+                   f'#o-{i}:checked ~ .d-grid label[for=o-{i}]{{border-color:#8b5cf6;box-shadow:0 0 0 1px #8b5cf6}}')
+        itens += (f'<label for="o-{i}" class="d-item t-{tipo}"><span class="ic">{_arte(tipo)}</span>'
+                  f'<span><b>{txt(o, "astro_observado")}</b><small>{txt(o, "local")} • {curta}</small>'
+                  f'<span class="tag-t">{TIPO_ROTULO[tipo]}</span></span></label>')
+        detalhes += (f'<div class="d-det det-{i}"><div class="d-banner">{_arte(tipo)}</div>'
+                     f'<h2>{txt(o, "astro_observado")}</h2><div class="quando">{longa}</div>'
+                     f'<div class="d-tab"><div><span>Tipo</span><b>{TIPO_ROTULO[tipo]}</b></div>'
+                     f'<div><span>Local</span><b>{txt(o, "local")}</b></div>'
+                     f'<div><span>Equipamento</span><b>{txt(o, "equipamento")}</b></div>'
+                     f'<div><span>Poluição luminosa</span><b>{txt(o, "poluicao_luminosa").capitalize()}</b></div>'
+                     f'<div><span>Visibilidade</span><b>{txt(o, "visibilidade").capitalize()}</b></div></div>'
+                     f'<div class="d-notas"><small>ANOTAÇÕES</small>{notas}</div></div>')
+
+    return (f'<svg width="0" height="0" style="position:absolute">{DIARIO_DEFS}</svg><style>{regras}</style>'
+            f'<div class="d-wrap">{radios}<div class="d-grid"><div class="d-esq">{CABECALHO_DIARIO}<div class="chips">{chips}</div>'
+            f'<div class="d-lista">{itens}</div></div><div class="d-dir">{detalhes}</div></div></div>')
 
 
 PAGINAS = ["inicio", "mapa", "diario"]
@@ -768,10 +999,15 @@ def ir_para(pagina):
             + [gr.update(variant="primary" if p == pagina else "secondary") for p in PAGINAS])
 
 
+def ir_para_diario(aba):
+    """Abre a página Diário já na aba pedida ("diario", "registrar" ou "historico")."""
+    return ir_para("diario") + [gr.update(selected=aba)]
+
+
 # ---------------------------------------------------------------------------
 # Layout Gradio: tela inicial + app com 3 abas
 # ---------------------------------------------------------------------------
-with gr.Blocks(title="AstroLog", css=CSS) as demo:
+with gr.Blocks(title="AstroLog") as demo:
 
     # ---------- TELA INICIAL (visível ao abrir) ----------
     with gr.Column(visible=True, elem_id="tela-inicio") as tela_inicio:
@@ -786,6 +1022,7 @@ with gr.Blocks(title="AstroLog", css=CSS) as demo:
             busca = gr.Textbox(show_label=False, container=False, elem_id="busca",
                                scale=0, min_width=0,
                                placeholder="🔍  Buscar local de observação...")
+            btn_novo = gr.Button("＋  Novo registro", elem_id="btn-novo", scale=0, min_width=0)
 
         # Corpo (Ajustado via CSS com margens para compensar os fixos)
         with gr.Row(elem_id="corpo", equal_height=False):
@@ -811,44 +1048,59 @@ with gr.Blocks(title="AstroLog", css=CSS) as demo:
                         df_locais = gr.Dataframe(label="Locais cadastrados")
 
                 with gr.Column(visible=False) as pg_diario:
-                    gr.Markdown("## 📒 Diário de observações")
-                    with gr.Tab("Registrar Observação"):
-                        with gr.Row():
-                            astro = gr.Textbox(label="Astro observado",
-                                               placeholder="Ex.: Júpiter")
-                            tipo = gr.Dropdown(TIPOS_ASTRO, label="Tipo de astro",
-                                               value="planeta")
-                        equipamento = gr.Textbox(label="Equipamento",
-                                                 placeholder="Ex.: Telescópio Refletor 114mm")
-                        data_hora = gr.Textbox(label="Data e hora (ISO 8601)",
-                                               placeholder="2025-03-10T22:30:00")
-                        local = gr.Textbox(label="Local", placeholder="Cidade ou coordenadas")
-                        with gr.Row():
-                            poluicao = gr.Dropdown(POLUICAO, label="Poluição luminosa",
-                                                   value="baixa")
-                            visibilidade = gr.Dropdown(VISIBILIDADE, label="Visibilidade",
-                                                       value="boa")
-                        anotacoes = gr.Textbox(label="Anotações", lines=3)
-                        btn_salvar = gr.Button("Salvar", variant="primary")
-                        msg_salvar = gr.Markdown()
-                        btn_salvar.click(
-                            registrar_observacao,
-                            inputs=[astro, tipo, equipamento, data_hora, local,
-                                    poluicao, visibilidade, anotacoes],
-                            outputs=msg_salvar,
-                        )
+                    with gr.Tabs(selected="diario", elem_id="diario-tabs") as abas_diario:
+                        # --- Aba 1: o diário (lista + detalhes) ---
+                        with gr.Tab("Meu diário", id="diario"):
+                            diario_html = gr.HTML()
 
-                    with gr.Tab("Histórico de Observações"):
-                        btn_listar = gr.Button("Listar", variant="primary")
-                        df_hist = gr.Dataframe(label="Observações registradas")
-                        with gr.Row():
-                            id_excluir = gr.Textbox(label="ID para excluir", scale=1)
-                            btn_excluir = gr.Button("Excluir", variant="stop", scale=1)
-                        msg_excluir = gr.Markdown()
+                        # --- Aba 2: formulário de registro (reaproveitado) ---
+                        with gr.Tab("Registrar Observação", id="registrar"):
+                            gr.HTML('<div class="diario-head"><h1>Registrar observação</h1>'
+                                    '<p>Anote o que você viu no céu.</p></div>')
+                            with gr.Row():
+                                astro = gr.Textbox(label="Astro observado",
+                                                   placeholder="Ex.: Júpiter")
+                                tipo = gr.Dropdown(TIPOS_ASTRO, label="Tipo de astro",
+                                                   value="planeta")
+                            equipamento = gr.Textbox(label="Equipamento",
+                                                     placeholder="Ex.: Telescópio Refletor 114mm")
+                            data_hora = gr.Textbox(label="Data e hora (ISO 8601)",
+                                                   placeholder="2025-03-10T22:30:00",
+                                                   elem_id="data-hora")
+                            local = gr.Textbox(label="Local", placeholder="Cidade ou coordenadas")
+                            with gr.Row():
+                                poluicao = gr.Dropdown(POLUICAO, label="Poluição luminosa",
+                                                       value="baixa")
+                                visibilidade = gr.Dropdown(VISIBILIDADE, label="Visibilidade",
+                                                           value="boa")
+                            anotacoes = gr.Textbox(label="Anotações", lines=3)
+                            btn_salvar = gr.Button("Salvar", variant="primary")
+                            msg_salvar = gr.Markdown()
 
-                        btn_listar.click(listar_observacoes, inputs=None, outputs=df_hist)
-                        btn_excluir.click(excluir_observacao, inputs=id_excluir,
-                                          outputs=msg_excluir)
+                        # --- Aba 3: histórico em tabela (reaproveitado) ---
+                        with gr.Tab("Histórico de Observações", id="historico"):
+                            gr.HTML('<div class="diario-head"><h1>Histórico de observações</h1>'
+                                    '<p>Todos os seus registros em formato de tabela.</p></div>')
+                            btn_listar = gr.Button("Listar", variant="primary")
+                            df_hist = gr.Dataframe(label="Observações registradas")
+                            with gr.Row():
+                                id_excluir = gr.Textbox(label="ID para excluir", scale=1,
+                                                        elem_id="id-excluir")
+                                btn_excluir = gr.Button("Excluir", variant="stop", scale=1)
+                            msg_excluir = gr.Markdown()
+
+                    # Eventos do diário: salvar/excluir atualizam a lista e a tabela
+                    btn_salvar.click(
+                        registrar_observacao,
+                        inputs=[astro, tipo, equipamento, data_hora, local,
+                                poluicao, visibilidade, anotacoes],
+                        outputs=[msg_salvar, astro, tipo, equipamento, data_hora, local, poluicao, visibilidade, anotacoes],
+                    ).then(montar_diario, None, diario_html).then(listar_observacoes, None, df_hist)
+
+                    btn_listar.click(listar_observacoes, inputs=None, outputs=df_hist)
+
+                    btn_excluir.click(excluir_observacao, inputs=id_excluir, outputs=[msg_excluir, id_excluir]
+                    ).then(montar_diario, None, diario_html).then(listar_observacoes, None, df_hist)
 
     # ---------- Menu lateral e busca ----------
     saidas_nav = [pg_inicio, pg_mapa, pg_diario, nav_inicio, nav_mapa, nav_diario]
@@ -856,8 +1108,10 @@ with gr.Blocks(title="AstroLog", css=CSS) as demo:
         montar_dashboard, None, dash_html)
     nav_mapa.click(lambda: ir_para("mapa"), None, saidas_nav).then(
         listar_locais, busca, df_locais)
-    nav_diario.click(lambda: ir_para("diario"), None, saidas_nav).then(
-        listar_observacoes, None, df_hist)
+    saidas_diario = saidas_nav + [abas_diario]
+    nav_diario.click(lambda: ir_para_diario("diario"), None, saidas_diario).then(
+        montar_diario, None, diario_html).then(listar_observacoes, None, df_hist)
+    btn_novo.click(lambda: ir_para_diario("registrar"), None, saidas_diario)
     busca.submit(lambda: ir_para("mapa"), None, saidas_nav).then(
         listar_locais, busca, df_locais)
 
@@ -874,4 +1128,4 @@ with gr.Blocks(title="AstroLog", css=CSS) as demo:
 if __name__ == "__main__":
     current_dir = os.path.dirname(os.path.abspath(__file__))
     img_path = os.path.abspath(os.path.join(current_dir, "..", "img"))
-    demo.launch(allowed_paths=[img_path])
+    demo.launch(css=CSS, allowed_paths=[img_path], head=INPUT_MASK_JS)
