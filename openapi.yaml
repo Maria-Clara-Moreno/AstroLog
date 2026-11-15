@@ -19,6 +19,8 @@ tags:
     description: Operações sobre locais de observação
   - name: dashboard
     description: Dados agregados (consumo de API externa)
+  - name: auth
+    description: Cadastro de usuários e autenticação por token (Bearer)
 
 paths:
   /api/health:
@@ -35,6 +37,170 @@ paths:
               example:
                 status: ok
                 servico: astrolog
+
+  /api/auth/cadastro:
+    post:
+      tags: [auth]
+      summary: Cria uma conta de usuário
+      description: |
+        Valida nome, e-mail e senha. Não autentica automaticamente:
+        em caso de sucesso o frontend segue para a tela de login.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CadastroInput'
+            example:
+              nome: Ada Lovelace
+              email: ada@astrolog.app
+              senha: ceuescuro123
+      responses:
+        '201':
+          description: Conta criada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Usuario'
+        '400':
+          description: Campos inválidos (detalhados em `campos`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroValidacao'
+              example:
+                erro: A senha deve ter pelo menos 6 caracteres.
+                campos:
+                  senha: A senha deve ter pelo menos 6 caracteres.
+        '409':
+          description: E-mail já cadastrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroValidacao'
+              example:
+                erro: Já existe uma conta com este e-mail.
+                campos:
+                  email: Já existe uma conta com este e-mail.
+
+  /api/auth/login:
+    post:
+      tags: [auth]
+      summary: Autentica e devolve um token de sessão
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginInput'
+            example:
+              email: ada@astrolog.app
+              senha: ceuescuro123
+      responses:
+        '200':
+          description: Autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginOutput'
+        '400':
+          description: Campos ausentes ou inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroValidacao'
+        '401':
+          description: Credenciais inválidas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+              example:
+                erro: E-mail ou senha incorretos.
+
+  /api/auth/me:
+    get:
+      tags: [auth]
+      summary: Dados do usuário autenticado
+      description: Usado pelo frontend para restaurar a sessão ao recarregar a página.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Usuário dono do token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Usuario'
+        '401':
+          description: Token ausente, inválido ou expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+    patch:
+      tags: [auth]
+      summary: Atualiza o nome de exibição do usuário autenticado
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nome:
+                  type: string
+                  minLength: 2
+                  maxLength: 120
+              example:
+                nome: Grace Hopper
+      responses:
+        '200':
+          description: Usuário atualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Usuario'
+        '400':
+          description: Nome inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroValidacao'
+        '401':
+          description: Token ausente, inválido ou expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+
+    delete:
+      tags: [auth]
+      summary: Exclui a conta do usuário autenticado
+      description: Remove o usuário e todas as suas sessões.
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Conta excluída
+        '401':
+          description: Token ausente, inválido ou expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      summary: Encerra a sessão do token enviado
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Sessão encerrada (ou já inexistente)
 
   /api/observacoes:
     get:
@@ -312,6 +478,81 @@ components:
               example: 1
         - $ref: '#/components/schemas/ObservacaoInput'
 
+    Usuario:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        nome:
+          type: string
+          example: Ada Lovelace
+        email:
+          type: string
+          format: email
+          example: ada@astrolog.app
+        criado_em:
+          type: string
+          format: date-time
+
+    CadastroInput:
+      type: object
+      required: [nome, email, senha]
+      properties:
+        nome:
+          type: string
+          minLength: 2
+          maxLength: 120
+          example: Ada Lovelace
+        email:
+          type: string
+          format: email
+          maxLength: 180
+          example: ada@astrolog.app
+        senha:
+          type: string
+          format: password
+          minLength: 6
+          maxLength: 128
+          example: ceuescuro123
+
+    LoginInput:
+      type: object
+      required: [email, senha]
+      properties:
+        email:
+          type: string
+          format: email
+          example: ada@astrolog.app
+        senha:
+          type: string
+          format: password
+          example: ceuescuro123
+
+    LoginOutput:
+      type: object
+      properties:
+        token:
+          type: string
+          example: yd3f9s8K...
+        expira_em:
+          type: string
+          format: date-time
+        usuario:
+          $ref: '#/components/schemas/Usuario'
+
+    ErroValidacao:
+      allOf:
+        - $ref: '#/components/schemas/Erro'
+        - type: object
+          properties:
+            campos:
+              type: object
+              additionalProperties:
+                type: string
+              example:
+                email: Informe um e-mail válido.
+
     LocalObservacaoInput:
       type: object
       required: [nome]
@@ -356,3 +597,8 @@ components:
           type: string
         copyright:
           type: string
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer

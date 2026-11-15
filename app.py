@@ -9,17 +9,27 @@ Testar:
     curl http://localhost:5000/api/health
     curl http://localhost:5000/swagger
 """
-from datetime import datetime
+from datetime import datetime, timedelta
+import re
+import secrets
 
 import requests
 from flask import Flask, jsonify, request, send_from_directory
+from sqlalchemy.exc import IntegrityError
 
 from config import Config
-from models import LocalObservacao, Observacao, db
+from models import DURACAO_SESSAO, LocalObservacao, Observacao, Sessao, Usuario, db
 
 app = Flask(__name__)
 app.config.from_object(Config)
 db.init_app(app)
+
+# Validação de e-mail: algo@dominio.tld (sem espaços, com ponto no domínio)
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$")
+SENHA_MIN = 6
+SENHA_MAX = 128
+NOME_MIN = 2
+NOME_MAX = 120
 
 
 # ---------------------------------------------------------------------------
@@ -41,6 +51,73 @@ def _buscar_observacao(obs_id):
 
 def _buscar_local(local_id):
     return db.session.get(LocalObservacao, local_id)
+
+
+def _buscar_usuario(usuario_id):
+    return db.session.get(Usuario, usuario_id)
+
+
+def _validar_cadastro(dados):
+    """Valida os campos do cadastro.
+
+    Devolve (nome, email, senha, erros). `erros` é um dict campo → mensagem,
+    pronto para ser exibido embaixo de cada campo no formulário.
+    """
+    nome = str(dados.get("nome", "") or "").strip()
+    email = str(dados.get("email", "") or "").strip().lower()
+    senha = dados.get("senha", "")
+    senha = senha if isinstance(senha, str) else ""
+
+    erros = {}
+    if not nome:
+        erros["nome"] = "Informe o seu nome."
+    elif len(nome) < NOME_MIN:
+        erros["nome"] = f"O nome deve ter pelo menos {NOME_MIN} caracteres."
+    elif len(nome) > NOME_MAX:
+        erros["nome"] = f"O nome deve ter no máximo {NOME_MAX} caracteres."
+
+    if not email:
+        erros["email"] = "Informe o seu e-mail."
+    elif len(email) > 180 or not EMAIL_RE.match(email):
+        erros["email"] = "Informe um e-mail válido (ex.: voce@email.com)."
+
+    if not senha:
+        erros["senha"] = "Informe uma senha."
+    elif len(senha) < SENHA_MIN:
+        erros["senha"] = f"A senha deve ter pelo menos {SENHA_MIN} caracteres."
+    elif len(senha) > SENHA_MAX:
+        erros["senha"] = f"A senha deve ter no máximo {SENHA_MAX} caracteres."
+
+    return nome, email, senha, erros
+
+
+def _erro_campos(erros):
+    """Resposta 400 padronizada, com o detalhe de cada campo inválido."""
+    primeira = next(iter(erros.values()))
+    return jsonify({"erro": primeira, "campos": erros}), 400
+
+
+def _token_da_requisicao():
+    """Lê o token de Authorization: Bearer <token> (ou X-Auth-Token)."""
+    cabecalho = request.headers.get("Authorization", "").strip()
+    if cabecalho.lower().startswith("bearer "):
+        return cabecalho[7:].strip()
+    return (request.headers.get("X-Auth-Token") or "").strip()
+
+
+def _sessao_atual():
+    """Retorna a Sessao válida do token enviado, ou None."""
+    token = _token_da_requisicao()
+    if not token:
+        return None
+    sessao = Sessao.query.filter_by(token=token).first()
+    if sessao is None:
+        return None
+    if not sessao.ativa:
+        db.session.delete(sessao)
+        db.session.commit()
+        return None
+    return sessao
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +147,10 @@ def inicio():
             "/api/observacoes",
             "/api/locais",
             "/api/dashboard/hoje",
+            "/api/auth/cadastro",
+            "/api/auth/login",
+            "/api/auth/me",
+            "/api/auth/logout",
         ],
     }), 200
 
@@ -107,6 +188,141 @@ def swagger_ui():
 def openapi_spec():
     return send_from_directory(app.root_path, "openapi.yaml",
                                mimetype="application/yaml")
+
+
+# ===========================================================================
+# ROTAS: Autenticação (cadastro, login, sessão)
+# ===========================================================================
+@app.post("/api/auth/cadastro")
+def cadastrar_usuario():
+    """Cria uma conta. 201 em sucesso; 400 campos inválidos; 409 e-mail já usado."""
+    dados = request.get_json(silent=True) or {}
+    nome, email, senha, erros = _validar_cadastro(dados)
+    if erros:
+        return _erro_campos(erros)
+
+    if Usuario.query.filter(db.func.lower(Usuario.email) == email).first() is not None:
+        return jsonify({
+            "erro": "Já existe uma conta com este e-mail.",
+            "campos": {"email": "Já existe uma conta com este e-mail."},
+        }), 409
+
+    usuario = Usuario(nome=nome, email=email)
+    usuario.definir_senha(senha)
+    db.session.add(usuario)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        # Corrida entre dois cadastros simultâneos com o mesmo e-mail
+        db.session.rollback()
+        return jsonify({
+            "erro": "Já existe uma conta com este e-mail.",
+            "campos": {"email": "Já existe uma conta com este e-mail."},
+        }), 409
+
+    # O cadastro NÃO autentica automaticamente: o frontend leva para o login.
+    return jsonify(usuario.to_dict()), 201
+
+
+@app.post("/api/auth/login")
+def login():
+    """Valida e-mail + senha e devolve um token de sessão (Bearer)."""
+    dados = request.get_json(silent=True) or {}
+    email = str(dados.get("email", "") or "").strip().lower()
+    senha = dados.get("senha", "")
+    senha = senha if isinstance(senha, str) else ""
+
+    erros = {}
+    if not email:
+        erros["email"] = "Informe o seu e-mail."
+    elif not EMAIL_RE.match(email):
+        erros["email"] = "Informe um e-mail válido."
+    if not senha:
+        erros["senha"] = "Informe a sua senha."
+    if erros:
+        return _erro_campos(erros)
+
+    usuario = Usuario.query.filter(db.func.lower(Usuario.email) == email).first()
+    # Mesma mensagem para e-mail inexistente e senha errada (não revela quem tem conta).
+    if usuario is None or not usuario.conferir_senha(senha):
+        return jsonify({"erro": "E-mail ou senha incorretos."}), 401
+
+    agora = datetime.utcnow()
+    # Limpa sessões expiradas deste usuário antes de criar outra
+    Sessao.query.filter(
+        Sessao.usuario_id == usuario.id, Sessao.expira_em <= agora
+    ).delete(synchronize_session=False)
+
+    sessao = Sessao(
+        token=secrets.token_urlsafe(32),
+        usuario_id=usuario.id,
+        criada_em=agora,
+        expira_em=agora + DURACAO_SESSAO,
+    )
+    db.session.add(sessao)
+    db.session.commit()
+
+    return jsonify({
+        "token": sessao.token,
+        "expira_em": sessao.expira_em.isoformat(),
+        "usuario": usuario.to_dict(),
+    }), 200
+
+
+@app.get("/api/auth/me")
+def usuario_atual():
+    """Dados do usuário dono do token enviado (usado para restaurar a sessão)."""
+    sessao = _sessao_atual()
+    if sessao is None:
+        return jsonify({"erro": "Sessão inválida ou expirada. Faça login novamente."}), 401
+    return jsonify(sessao.usuario.to_dict()), 200
+
+
+@app.patch("/api/auth/me")
+def atualizar_usuario_atual():
+    """Atualiza o nome de exibição do usuário autenticado (tela de Perfil)."""
+    sessao = _sessao_atual()
+    if sessao is None:
+        return jsonify({"erro": "Sessão inválida ou expirada. Faça login novamente."}), 401
+
+    dados = request.get_json(silent=True) or {}
+    if "nome" in dados:
+        nome = str(dados.get("nome") or "").strip()
+        if not nome:
+            return _erro_campos({"nome": "Informe o seu nome."})
+        if len(nome) < NOME_MIN:
+            return _erro_campos({"nome": f"O nome deve ter pelo menos {NOME_MIN} caracteres."})
+        if len(nome) > NOME_MAX:
+            return _erro_campos({"nome": f"O nome deve ter no máximo {NOME_MAX} caracteres."})
+        sessao.usuario.nome = nome
+
+    db.session.commit()
+    return jsonify(sessao.usuario.to_dict()), 200
+
+
+@app.post("/api/auth/logout")
+def logout():
+    """Encerra a sessão do token enviado."""
+    sessao = _sessao_atual()
+    if sessao is None:
+        return "", 204
+    db.session.delete(sessao)
+    db.session.commit()
+    return "", 204
+
+
+@app.delete("/api/auth/me")
+def excluir_usuario_atual():
+    """Exclui a conta do usuário autenticado (e todas as suas sessões)."""
+    sessao = _sessao_atual()
+    if sessao is None:
+        return jsonify({"erro": "Sessão inválida ou expirada. Faça login novamente."}), 401
+
+    usuario = sessao.usuario
+    # Sessao tem cascade delete-orphan em Usuario.sessoes
+    db.session.delete(usuario)
+    db.session.commit()
+    return "", 204
 
 
 # ===========================================================================
