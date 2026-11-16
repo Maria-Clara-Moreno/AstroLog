@@ -1,129 +1,145 @@
 # AstroLog — Diário de Observação Astronômica
 
-Um app para astrônomos amadores e entusiastas. Permite registrar observações do céu, calcular a melhor época para observar certos astros e mapear áreas com baixa poluição luminosa para sessões de observação.
+Um aplicativo para astrônomos amadores e entusiastas. Permite registrar observações do céu, calcular a melhor época para observar certos astros e mapear áreas com baixa poluição luminosa para sessões de observação.
 
 ## Stack
 
 - **Backend:** Python + Flask + SQLAlchemy
-- **Banco:** MariaDB (via Docker Compose)
+- **Banco de Dados:** MariaDB (via Docker Compose)
 - **Documentação:** OpenAPI 3.0.3 + Swagger UI
 - **Frontend:** Gradio
 - **Testes:** pytest
 
-## Estrutura
-```
+## Estrutura do Projeto
+
+```text
 AstroLog/
-├── app.py               # API Flask (inclui /api/auth/*)
-├── config.py            # Configuração (DATABASE_URL, NASA)
-├── models.py            # ORM: Observacao, LocalObservacao, Usuario, Sessao
-├── openapi.yaml         # Contrato OpenAPI (Swagger em /swagger)
-├── docker-compose.yml   # MariaDB
+├── __pycache__/           # Arquivos compilados do Python (gerado automaticamente)
 ├── frontend/
-│   └── gradio_app.py    # Interface (cadastro, login e dashboard)
-└── tests/
-    ├── test_api.py
-    └── test_auth.py
+│   ├── astros_cache.json  # Cache local para otimizar requisições de astros
+│   └── gradio_app.py      # Interface web (Gradio) com design customizado
+├── img/                   # Imagens e assets visuais do projeto (ex: lua.png)
+├── tests/
+│   ├── __pycache__/
+│   └── test_api.py        # Testes automatizados com pytest
+├── venv/                  # Ambiente virtual Python
+├── app.py                 # API Flask (rotas, auth e lógica principal)
+├── config.py              # Configurações (DATABASE_URL, NASA API)
+├── docker-compose.yml     # Configuração do container do MariaDB
+├── models.py              # Modelos ORM (Observacao, Local, Usuario, Sessao)
+├── openapi.yaml           # Contrato OpenAPI (documentação Swagger)
+├── README.md              # Este arquivo
+└── requirements.txt       # Dependências do projeto
 ```
+
+## Guia Rápido (Passo a Passo)
+
+1. Criar e ativar o ambiente virtual (Apenas na primeira vez)
+
+# Cria a pasta venv
+python -m venv venv
+
+# Ativa a venv no Windows (PowerShell)
+.\venv\Scripts\Activate.ps1
+
+| Nota: Se aparecer erro de "execução de scripts desabilitada", rode antes: Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned.
+
+2. Instalar as dependências
+
+Com a venv ativada (você verá (venv) no início da linha do terminal), instale as bibliotecas necessárias:
+
+pip install -r requirements.txt
+
+3. Subir o Banco de Dados (Docker)
+
+docker compose up -d
+
+| Nota: Este projeto está configurado para usar a porta 3307 no seu computador (mapeada para a 3306 do container) para evitar conflitos com MySQLs locais.
+
+4. Inicializar as tabelas do banco
+
+flask --app app init-db
+
+5. Rodar a API (Backend)
+
+flask --app app run
+
+| A API estará disponível em http://127.0.0.1:5000. Deixe este terminal aberto.
+
+6. Rodar a Interface (Frontend)
+
+.\venv\Scripts\Activate.ps1
+python frontend/gradio_app.py
+
+| A interface estará disponível em http://127.0.0.1:7860.
 
 ## Autenticação
 
-O cadastro e o login são validados **no formulário** (JavaScript, com mensagens
-embaixo de cada campo) e **no servidor** (funções Python do Gradio e rotas da API).
+O cadastro e o login são validados no formulário (JavaScript, com mensagens embaixo de cada campo) e no servidor (funções Python do Gradio e rotas da API).
 
-| Método | Rota | Descrição |
-| --- | --- | --- |
-| POST | `/api/auth/cadastro` | Cria a conta. `201` sucesso, `400` campos inválidos, `409` e-mail já cadastrado. |
-| POST | `/api/auth/login` | Valida e-mail/senha e devolve `token`. `401` se as credenciais estiverem erradas. |
-| GET | `/api/auth/me` | Retorna o usuário do token (`Authorization: Bearer <token>`). |
-| PATCH | `/api/auth/me` | Atualiza o nome de exibição do usuário autenticado. |
-| DELETE | `/api/auth/me` | Exclui a conta do usuário e todas as suas sessões. |
-| POST | `/api/auth/logout` | Invalida o token da sessão. |
+Método	  Rota	                      Descrição
+POST	     /api/auth/cadastro	          Cria a conta. 201 sucesso, 400 campos inválidos, 409 e-mail já cadastrado.
+POST	     /api/auth/login	             Valida e-mail/senha e devolve token. 401 se as credenciais estiverem erradas.
+GET	     /api/auth/me	                Retorna o usuário do token (Authorization: Bearer <token>).
+PATCH	     /api/auth/me	                Atualiza o nome de exibição do usuário autenticado.
+DELETE	  /api/auth/me	                Exclui a conta do usuário e todas as suas sessões.
+POST	    /api/auth/                    logout	Invalida o token da sessão.
 
-Fluxo das telas:
+As senhas são guardadas apenas como hash (werkzeug.security) na tabela usuarios; os tokens ficam em sessoes e expiram em 7 dias.
 
-1. **Início** → *Criar uma conta*.
-2. **Cadastro**: valida nome (2+), e-mail e senha (6+). Se a API criar a conta,
-   a tela de **login** abre com o e-mail já preenchido.
-3. **Login**: credenciais válidas abrem o **dashboard**; inválidas mostram
-   "E-mail ou senha incorretos." sem revelar se o e-mail existe.
-   Os dois formulários têm o **olho** para mostrar/ocultar a senha.
-4. Ao recarregar, o token salvo no navegador é validado em `/api/auth/me` e a
-   sessão é restaurada. **Sair da conta** fica no menu do avatar (canto superior
-   direito) e na página de Perfil — não há mais botão "Sair" na barra lateral.
+## Página de perfil
 
-As senhas são guardadas apenas como hash (`werkzeug.security`) na tabela
-`usuarios`; os tokens ficam em `sessoes` e expiram em 7 dias.
+Acessível pelo item Perfil no menu lateral ou pelo avatar no canto superior direito. Ela mostra:
 
-### Página de Perfil
+avatar, nome, e-mail e plano;
 
-Acessível pelo item **Perfil** no menu lateral ou pelo avatar no canto superior
-direito (menu → nome/e-mail). Ela mostra:
+contadores reais de observações, astros distintos e locais;
 
-- avatar com o mesmo ícone de usuário da navbar, nome, e-mail e plano;
-- contadores reais de **observações**, **astros distintos** e **locais**
-  (calculados a partir de `/api/observacoes` e `/api/locais`);
-- cartões de equipamentos e atalho para o Premium;
-- bloco **Conta** com Exportar meus dados, Notificações de eventos,
-  **Configurações** e Ajuda e suporte;
-- botão **Sair da conta** (sem a antiga bolinha de configurações no canto).
+atalhos para Equipamentos, Premium e Configurações;
 
-A página tem **Sair da conta** e, logo abaixo, **Excluir conta** (com modal de
-confirmação; a exclusão apaga de verdade o usuário e as sessões na API).
+botões para Sair da conta e Excluir conta (com modal de confirmação).
 
-Nesta etapa, o restante da página é **somente visual**: a única ação funcional é **Sair da
-conta** (que encerra a sessão na API). Clicar nos equipamentos, nos itens do
-bloco Conta ou na engrenagem do canto superior direito apenas exibe o aviso
-**“Em breve”** — esses recursos ainda não têm backend.
+Nota: Nesta etapa, o restante da página é somente visual: a única ação funcional é Sair da conta. Clicar nos itens sem backend exibe o aviso “Em breve”.
 
 ## Edição de observações
 
-No **Diário**, cada registro tem o botão **Editar**. Ele abre o formulário no
-modo de edição (título "Editar observação #N"), já preenchido — inclusive a
-data no formato `dd/mm/aaaa hh:mm`. Ao salvar:
+No Diário, cada registro tem o botão Editar. Ele abre o formulário no modo de edição, já preenchido (inclusive a data no formato dd/mm/aaaa hh:mm). Ao salvar:
 
-- o app envia `PATCH /api/observacoes/{id}` e **atualiza** o registro (não cria
-  outro);
-- **Cancelar edição** descarta as mudanças e volta para a lista;
-- **Novo registro** limpa o formulário e sai do modo de edição.
+o app envia PATCH /api/observacoes/{id} e atualiza o registro;
 
-## Ícones
+Cancelar edição descarta as mudanças;
 
-Todas as telas usam ícones vetoriais (SVG) no lugar de emojis — marca AstroLog,
-boas-vindas, menu lateral, barra superior, clima do dashboard, botão Editar,
-checks do Premium e aviso "Em breve". O rodapé padrão do Gradio também fica
-oculto.
+Novo registro limpa o formulário.
+
+## Documentação da API (Swagger)
+
+Com a API rodando, acesse no navegador:
+
+Swagger UI: http://127.0.0.1:5000/swagger
+
+OpenAPI JSON/YAML: http://127.0.0.1:5000/openapi.yaml
 
 ## Rodando os testes
 
-```bash
-pip install -r requirements.txt
 pytest -q
-```
 
-Os testes de autenticação usam um SQLite temporário (`DATABASE_URL`), sem
-precisar do MariaDB.
+| Os testes de autenticação usam um SQLite temporário (DATABASE_URL), sem precisar do MariaDB rodando.
 
-## Problemas comuns
+## Problemas Comuns
 
-### "A API respondeu com erro 404" ao criar conta ou entrar
+"A API respondeu com erro 404" ao criar conta ou entrar
+O app.py tem as rotas /api/auth/*, mas a API em execução pode ser uma versão antiga. O Flask não recarrega o código sozinho se você não estiver no modo debug. Pare o terminal da API com Ctrl+C e suba de novo:
 
-O `app.py` já tem as rotas `/api/auth/*`, mas a API **em execução** pode ser uma
-versão antiga: `flask --app app run` (sem debug) não recarrega o código quando o
-arquivo muda. Pare o terminal da API com `Ctrl+C` e suba de novo:
-
-```bash
 flask --app app run
-```
 
-Para confirmar em qual estado está a API:
+Reinicie também o Gradio para carregar o gradio_app.py novo.
 
-```bash
-python diagnostico_auth.py
-# ou, apontando para outra porta:
-ASTROLOG_API=http://127.0.0.1:5000 python diagnostico_auth.py
-```
+## Erro de conexão com o banco (Access denied ou porta em uso)
 
-O script mostra ✓ quando as rotas de cadastro, login e sessão existem. Se
-aparecer 404, ainda há um processo antigo atendendo (veja "Address already in
-use" no terminal) — encerre-o e suba a API outra vez. Reinicie também o Gradio
-para carregar o `gradio_app.py` novo.
+Se o Docker reclamar que a porta 3307 (ou 3306) está em uso, verifique se há um MySQL local rodando. Você pode parar o serviço do MySQL no Windows ou alterar a porta no docker-compose.yml e no config.py.
+
+Para recriar o container do banco do zero (apaga os dados locais):
+
+docker compose down -v
+docker compose up -d
+

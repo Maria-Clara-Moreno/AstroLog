@@ -1071,7 +1071,7 @@ CSS_DASH = """
     gap: 10px;
     background: transparent;
     border: none;
-    color: #fda4af;
+    color: rgb(255, 255, 255);
     font-size: .87rem;
     font-weight: 600;
     padding: 10px 12px;
@@ -1375,6 +1375,41 @@ CSS_MAPA = """
 """
 CSS += CSS_MAPA
 
+CSS_MAPA_REAL = """
+#astro-map { position: absolute; inset: 0; z-index: 1; border-radius: 20px; background: #07081a; font-family: inherit; }
+#astro-map img { margin: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
+#astro-map img.leaflet-tile { max-width: none !important; max-height: none !important; }
+.camada-luzes { mix-blend-mode: screen; }
+.astro-pin { background: none !important; border: none !important; }
+.astro-pin .mk .glow, .astro-pin .mk .mk-nome, .astro-pin .vm * { pointer-events: none; }
+.astro-pin .mk .mk-nome { width: auto; max-width: 150px; }
+.zoom-baixo .mk-nome { display: none; }
+.zoom-baixo .mk .glow { width: 64px; height: 64px; }
+.vm { position: absolute; width: 0; height: 0; }
+.vm .halo { position: absolute; left: 0; top: 0; width: 150px; height: 150px; border-radius: 50%;
+            transform: translate(-50%, -50%);
+            background: radial-gradient(circle, rgba(139,92,246,.7) 0%, rgba(124,58,237,.4) 35%, transparent 70%); }
+.vm .ponto { position: absolute; left: 0; top: 0; width: 13px; height: 13px; border-radius: 50%;
+             background: #fff; transform: translate(-50%, -50%); box-shadow: 0 0 10px #fff; }
+.vm .nome { position: absolute; left: 14px; top: 0; transform: translateY(-50%); color: #fff;
+            font-size: .8rem; font-weight: 600; text-shadow: 0 1px 6px rgba(0,0,0,.9); }
+.bussola { cursor: pointer; padding: 0; }
+.bussola:hover { background: rgba(139,92,246,.35); }
+.mapa .leaflet-control-attribution { background: rgba(10,11,32,.7); color: #8a88ad; font-size: 10px; }
+.mapa .leaflet-control-attribution a { color: #a5a3c4; }
+.mapa .leaflet-bar { border: 1px solid rgba(255,255,255,.12) !important; box-shadow: none; }
+.mapa .leaflet-bar a, .mapa .leaflet-bar a:hover { background: #141634; color: #fff; border-bottom: 1px solid #2a2c5e; }
+.mapa .leaflet-bar a:hover { background: #22245a; }
+.mapa .leaflet-control-layers { background: #141634; color: #fff; border: 1px solid rgba(255,255,255,.12); box-shadow: none; }
+.mapa .leaflet-control-scale-line { color: #cfcde6; border-color: #cfcde6; background: rgba(10,11,32,.55); }
+.mapa-aviso { position: absolute; left: 50%; bottom: 56px; transform: translateX(-50%); z-index: 5; padding: 9px 18px;
+              border-radius: 999px; background: rgba(15,14,40,.95); border: 1px solid rgba(255,255,255,.15);
+              color: #fff; font-size: .8rem; }
+.ico-loc { width: 18px; height: 18px; display: block; margin: 6px auto; }
+"""
+CSS += CSS_MAPA_REAL
+
+
 CSS_DIARIO = """
 #tela-app {
     --body-text-color: #e8e6f5; --body-text-color-subdued: #a5a3c4;
@@ -1608,8 +1643,9 @@ CSS_PREMIUM = """
     margin-bottom: 6px;
 }
 .gradio-container-6-31-0 .prose * {
-    color: rgb(242, 201, 76);
+    color: rgb(255, 255, 255);
 }
+.premium-side-title span { color: rgb(242, 201, 76); }
 .premium-side-desc {
     color: rgb(255 254 165 / 88%);
     font-size: 0.78rem;
@@ -2701,16 +2737,237 @@ def foto_local(arquivo, largura=640):
     except (FileNotFoundError, OSError):
         return ""
 
+# Ponto de partida do "Você" (o botão de localização do mapa troca pela posição real do navegador)
+VOCE_PADRAO = (-23.55, -46.63)
+KM_FILTRO = 1500   # raio do filtro de distância
+
 LOCAIS_EXEMPLO = [
-    dict(id="serra", nome="Serra do Campo Escuro", cor="verde", foto="serra_do_campo.png", foco="50% 62%", x=23.4, y=18.4, bortle=2,
-         km=42, minutos=38, mag="21.9", nuvens=12, qualidade="Excelente", serie=[88, 92, 85, 95, 90, 78, 91]),
-    dict(id="vale", nome="Vale das Estrelas", cor="amarelo", foto="vale_das_estrelas.png", foco="50% 50%", x=57.4, y=19.5, bortle=5,
-         km=35, minutos=31, mag="20.4", nuvens=28, qualidade="Regular", serie=[58, 64, 52, 70, 61, 48, 66]),
-    dict(id="pico", nome="Pico da Neblina", cor="azul", foto="pico_da_neblina.png", foco="50% 30%", x=55.6, y=52.5, bortle=3,
-         km=18, minutos=22, mag="21.3", nuvens=18, qualidade="Bom", serie=[72, 78, 69, 82, 75, 63, 80]),
-    dict(id="morro", nome="Morro do Horizonte", cor="vermelho", foto="morro_do_horizonte.png", foco="50% 52%", x=15.0, y=65.0, bortle=7,
-         km=9, minutos=14, mag="18.9", nuvens=45, qualidade="Ruim", serie=[34, 41, 30, 45, 38, 27, 42]),
+    dict(id="serra", nome="Serra do Campo Escuro", cor="verde", foto="serra_do_campo.png", foco="50% 62%", lat=-12.60, lng=-41.45, bortle=2,
+         mag="21.9", nuvens=12, qualidade="Excelente", serie=[88, 92, 85, 95, 90, 78, 91]),
+    dict(id="vale", nome="Vale das Estrelas", cor="amarelo", foto="vale_das_estrelas.png", foco="50% 50%", lat=-9.40, lng=-40.50, bortle=5,
+         mag="20.4", nuvens=28, qualidade="Regular", serie=[58, 64, 52, 70, 61, 48, 66]),
+    dict(id="pico", nome="Pico da Neblina", cor="azul", foto="pico_da_neblina.png", foco="50% 30%", lat=-14.10, lng=-47.52, bortle=3,
+         mag="21.3", nuvens=18, qualidade="Bom", serie=[72, 78, 69, 82, 75, 63, 80]),
+    dict(id="morro", nome="Morro do Horizonte", cor="vermelho", foto="morro_do_horizonte.png", foco="50% 52%", lat=-19.92, lng=-43.94, bortle=7,
+         mag="18.9", nuvens=45, qualidade="Ruim", serie=[34, 41, 30, 45, 38, 27, 42]),
 ]
+
+def distancia_km(lat1, lng1, lat2, lng2):
+    """Distância em linha reta (fórmula de haversine)."""
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    a = (math.sin((p2 - p1) / 2) ** 2
+         + math.cos(p1) * math.cos(p2) * math.sin(math.radians(lng2 - lng1) / 2) ** 2)
+    return 6371 * 2 * math.asin(math.sqrt(a))
+
+def tempo_de_carro(km):
+    """Estimativa simples: trajeto ~30% maior que a linha reta, a 70 km/h."""
+    minutos = round(km * 1.3 / 70 * 60)
+    if minutos < 60:
+        return f"{minutos} min"
+    h, m = divmod(minutos, 60)
+    return f"{h} h {m} min" if m else f"{h} h"
+
+for _l in LOCAIS_EXEMPLO:
+    _l["km"] = round(distancia_km(VOCE_PADRAO[0], VOCE_PADRAO[1], _l["lat"], _l["lng"]))
+    _l["tempo"] = tempo_de_carro(_l["km"])
+
+LEAFLET_HEAD = """
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+"""
+
+MAP_JS = r"""
+<script>
+(function () {
+    var COR = { verde: '#22d3a0', azul: '#2ea8ff', amarelo: '#f5b93a', vermelho: '#f43f5e' };
+    var BRASIL = [[-33.8, -73.9], [5.3, -34.8]];
+
+    function distKm(a, b) {
+        var R = 6371, rad = Math.PI / 180;
+        var dLat = (b[0] - a[0]) * rad, dLng = (b[1] - a[1]) * rad;
+        var x = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(a[0] * rad) * Math.cos(b[0] * rad) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        return R * 2 * Math.asin(Math.sqrt(x));
+    }
+
+    function tempoCarro(km) {
+        var min = Math.round(km * 1.3 / 70 * 60);
+        if (min < 60) return min + ' min';
+        var h = Math.floor(min / 60), m = min % 60;
+        return h + ' h' + (m ? ' ' + m + ' min' : '');
+    }
+
+    function el(tag, cls, txt) {
+        var e = document.createElement(tag);
+        if (cls) e.className = cls;
+        if (txt) e.textContent = txt;
+        return e;
+    }
+
+    function aviso(raiz, msg) {
+        var a = el('div', 'mapa-aviso', msg);
+        raiz.appendChild(a);
+        setTimeout(function () { a.remove(); }, 4000);
+    }
+
+    function iniciar(caixa) {
+        var locais = JSON.parse(caixa.dataset.locais);
+        var voce = JSON.parse(caixa.dataset.voce);
+        var kmMax = Number(caixa.dataset.kmmax);
+        var raiz = caixa.parentNode;
+
+        var mapa = L.map(caixa, { zoomControl: false, zoomSnap: 0.25, minZoom: 2, worldCopyJump: true,
+                                  wheelPxPerZoomLevel: 90 });
+        mapa.setView([-14.5, -52], 4, { animate: false });
+
+        // --- Camadas: base escura (padrão) ou satélite; luzes noturnas (NASA) no chip HD ---
+        // Base escura da Esri (não exige chave de API) + camada de nomes por cima
+        var esriDark = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/';
+        var escuro = L.layerGroup([
+            L.tileLayer(esriDark + 'World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+                maxNativeZoom: 16, maxZoom: 19,
+                attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ'
+            }),
+            L.tileLayer(esriDark + 'World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
+                maxNativeZoom: 16, maxZoom: 19
+            })
+        ]).addTo(mapa);
+        var satelite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 19, attribution: 'Tiles &copy; Esri'
+        });
+        var luzes = L.tileLayer('https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_CityLights_2012/default/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpg', {
+            maxNativeZoom: 8, maxZoom: 19, className: 'camada-luzes', opacity: 0.95,
+            bounds: L.latLngBounds([-85, -720], [85, 720]),
+            attribution: 'Luzes noturnas: NASA GIBS / VIIRS'
+        });
+
+        L.control.zoom({ position: 'bottomright' }).addTo(mapa);
+        L.control.layers({ 'Escuro': escuro, 'Satélite': satelite }, null, { position: 'bottomright' }).addTo(mapa);
+        L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(mapa);
+
+        var chipHd = document.getElementById('flt-hd');
+        function sincronizarHd() {
+            if (chipHd && chipHd.checked) { luzes.addTo(mapa); } else { mapa.removeLayer(luzes); }
+        }
+        if (chipHd) chipHd.addEventListener('change', sincronizarHd);
+        sincronizarHd();
+
+        // --- "Você" ---
+        var vm = el('div', 'vm');
+        vm.appendChild(el('div', 'halo'));
+        vm.appendChild(el('div', 'ponto'));
+        vm.appendChild(el('div', 'nome', 'Você'));
+        var marcaVoce = L.marker(voce, {
+            icon: L.divIcon({ className: 'astro-pin', html: vm, iconSize: [0, 0] }),
+            interactive: false, keyboard: false, zIndexOffset: 500
+        }).addTo(mapa);
+
+        // --- Locais: bolhas de cor (qualidade do céu) + pinos clicáveis ---
+        function selecionar(id) {
+            var radio = document.getElementById('loc-' + id);
+            if (radio && !radio.checked) {
+                radio.checked = true;
+                radio.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
+
+        var pinos = {};
+        locais.forEach(function (l) {
+            var cor = COR[l.cor] || '#8b5cf6';
+            L.circle([l.lat, l.lng], { radius: 140000, stroke: false, fillColor: cor, fillOpacity: 0.12, interactive: false }).addTo(mapa);
+            L.circle([l.lat, l.lng], { radius: 70000, stroke: false, fillColor: cor, fillOpacity: 0.22, interactive: false }).addTo(mapa);
+
+            var pin = el('div', 'mk mk-' + l.id + ' c-' + l.cor + (l.ideal ? ' ideal' : '') + (l.b13 ? ' b13' : ''));
+            pin.appendChild(el('span', 'glow'));
+            pin.appendChild(el('span', 'ring'));
+            pin.appendChild(el('span', 'core'));
+            pin.appendChild(el('span', 'mk-nome', l.nome));
+            pin.appendChild(el('span', 'mk-tag', 'Bortle ' + l.bortle));
+            var marca = L.marker([l.lat, l.lng], {
+                icon: L.divIcon({ className: 'astro-pin', html: pin, iconSize: [0, 0] }), title: l.nome
+            }).addTo(mapa);
+            marca.on('click', function () {
+                selecionar(l.id);
+                mapa.flyTo([l.lat, l.lng], Math.max(mapa.getZoom(), 6), { duration: 0.8 });
+            });
+            pinos[l.id] = pin;
+        });
+
+        // --- Distâncias a partir de "Você" (cartões e filtro de distância) ---
+        var anel1 = L.circle(voce, { radius: 60000, stroke: false, fillColor: '#8b5cf6', fillOpacity: 0.2, interactive: false }).addTo(mapa);
+        function atualizarVoce(pos) {
+            voce = pos;
+            marcaVoce.setLatLng(pos);
+            anel1.setLatLng(pos);
+            locais.forEach(function (l) {
+                var d = distKm(pos, [l.lat, l.lng]);
+                pinos[l.id].classList.toggle('kmax', d <= kmMax);
+                var sub = document.querySelector('[data-sub="' + l.id + '"]');
+                if (sub) sub.textContent = Math.round(d) + ' km de você · ' + tempoCarro(d) + ' de carro';
+            });
+        }
+        atualizarVoce(voce);
+
+        // --- Botão "Minha localização" ---
+        var Localizar = L.Control.extend({
+            options: { position: 'bottomright' },
+            onAdd: function () {
+                var c = L.DomUtil.create('div', 'leaflet-bar');
+                var a = L.DomUtil.create('a', '', c);
+                a.href = '#';
+                a.title = 'Minha localização';
+                a.setAttribute('role', 'button');
+                a.innerHTML = '<svg class="ico-loc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>';
+                L.DomEvent.disableClickPropagation(c);
+                L.DomEvent.on(a, 'click', function (e) {
+                    L.DomEvent.preventDefault(e);
+                    if (!navigator.geolocation) { aviso(raiz, 'Seu navegador não permite obter a localização.'); return; }
+                    navigator.geolocation.getCurrentPosition(function (p) {
+                        var pos = [p.coords.latitude, p.coords.longitude];
+                        atualizarVoce(pos);
+                        mapa.flyTo(pos, 7, { duration: 1 });
+                    }, function () {
+                        aviso(raiz, 'Não foi possível obter sua localização.');
+                    }, { timeout: 10000 });
+                });
+                return c;
+            }
+        });
+        new Localizar().addTo(mapa);
+
+        // --- Detalhes de interação ---
+        function aplicarZoom() { caixa.classList.toggle('zoom-baixo', mapa.getZoom() < 5); }
+        mapa.on('zoomend', aplicarZoom);
+        aplicarZoom();
+
+        var voltar = document.getElementById('mapa-brasil');
+        if (voltar) voltar.addEventListener('click', function () {
+            mapa.flyToBounds(BRASIL, { padding: [24, 24], duration: 1.2 });
+        });
+
+        // A página do mapa começa escondida: enquadra o Brasil quando ganhar tamanho de verdade
+        var enquadrado = false;
+        new ResizeObserver(function () {
+            mapa.invalidateSize();
+            if (!enquadrado && caixa.clientWidth > 0 && caixa.clientHeight > 0) {
+                enquadrado = true;
+                mapa.fitBounds(BRASIL, { padding: [24, 24], animate: false });
+            }
+        }).observe(caixa);
+    }
+
+    function verificar() {
+        var caixa = document.getElementById('astro-map');
+        if (!caixa || caixa._astro || !window.L) return;
+        caixa._astro = true;
+        try { iniciar(caixa); } catch (e) { console.error('Mapa AstroLog:', e); }
+    }
+
+    new MutationObserver(verificar).observe(document.documentElement, { childList: true, subtree: true });
+    verificar();
+})();
+</script>
+"""
 
 def _cabecalho_popup(l):
     uri = foto_local(l["foto"])
@@ -2749,26 +3006,10 @@ def _grafico(l, hoje):
             f'<polyline points="{linha}" fill="none" stroke-width="2" style="stroke:var(--c)"/>{bolas}{dias}</svg>')
 
 def montar_mapa_html():
-    from urllib.parse import quote
     hoje = datetime.now()
-    rnd = random.Random(7)
-    estrelas = "".join(
-        f'<circle cx="{rnd.uniform(0, 1000):.0f}" cy="{rnd.uniform(0, 560):.0f}" '
-        f'r="{rnd.choice([.6, .8, 1, 1.4]):.1f}" fill="{rnd.choice(["#fff", "#fff", "#9ec5ff", "#ffe29a"])}" '
-        f'opacity="{rnd.uniform(.25, .9):.2f}"/>' for _ in range(170))
-    linhas = "".join(
-        f'<polyline points="{pts}" fill="none" stroke="#6d7bff" stroke-opacity=".28"/>'
-        for pts in ("690,110 750,150 820,140 880,205", "120,300 180,255 250,275",
-                    "800,330 870,385 950,350", "300,470 360,420 450,430"))
-    fundo = f'<svg class="estrelas" viewBox="0 0 1000 560" preserveAspectRatio="none">{linhas}{estrelas}</svg>'
-    rnd2 = random.Random(11)
-    hd = "".join(f'<circle cx="{rnd2.uniform(0, 1000):.0f}" cy="{rnd2.uniform(0, 560):.0f}" r="{rnd2.choice([.4, .6, .8]):.1f}" '
-                 f'fill="#fff" opacity="{rnd2.uniform(.3, .8):.2f}"/>' for _ in range(320))
-    hd = f'<svg class="estrelas hd-layer" viewBox="0 0 1000 560" preserveAspectRatio="none">{hd}</svg>'
-    aneis = "".join(f'<div class="anel-d" style="width:{d}px;height:{d}px"></div>' for d in (190, 400, 640))
 
     filtros = [("ideal", "Ideais", "ideal", True), ("bortle", "Bortle 1-3", "b13", False),
-               ("km", "≤ 50 km", "k50", False), ("hd", "HD", None, False)]
+               ("km", f"≤ {KM_FILTRO} km", "kmax", False), ("hd", "HD", None, False)]
     checks = "".join(f'<input type="checkbox" id="flt-{f}" class="loc-radio"{" checked" if on else ""}>'
                      for f, _, _, on in filtros)
     chips = "".join(f'<label for="flt-{f}">{n}</label>' for f, n, _, _ in filtros)
@@ -2777,7 +3018,6 @@ def montar_mapa_html():
         regras += f'#flt-{f}:checked ~ .mp-grid label[for=flt-{f}]{{background:#8b5cf6;color:#fff;border-color:#8b5cf6}}'
         if cls:
             regras += f'#flt-{f}:checked ~ .mp-grid .mk:not(.{cls}){{opacity:.25;filter:grayscale(.7)}}'
-    regras += '#flt-hd:checked ~ .mp-grid .hd-layer{display:block}'
 
     radios = "".join(f'<input type="radio" name="loc" id="loc-{l["id"]}" class="loc-radio"'
                      f'{" checked" if i == 0 else ""}>' for i, l in enumerate(LOCAIS_EXEMPLO))
@@ -2788,21 +3028,14 @@ def montar_mapa_html():
                    f'#loc-{i}:checked ~ .mp-grid .mk-{i} .ring{{transform:translate(-50%,-50%) scale(1.2);box-shadow:0 0 18px var(--c)}}'
                    f'#loc-{i}:checked ~ .mp-grid .mk-{i} .mk-tag{{display:inline-block}}')
 
-    marcadores = "".join(
-        f'<label for="loc-{l["id"]}" class="mk mk-{l["id"]} c-{l["cor"]}'
-        f'{" ideal" if l["qualidade"] in ("Excelente", "Bom") else ""}{" b13" if l["bortle"] <= 3 else ""}'
-        f'{" k50" if l["km"] <= 50 else ""}" style="left:{l["x"]}%;top:{l["y"]}%">'
-        f'<span class="glow"></span><span class="ring"></span><span class="core"></span>'
-        f'<span class="mk-nome">{escape(l["nome"])}</span><span class="mk-tag">Bortle {l["bortle"]}</span></label>'
-        for l in LOCAIS_EXEMPLO)
-    link = lambda l: f'https://www.google.com/maps/search/?api=1&query={quote(l["nome"])}'
+    link = lambda l: f'https://www.google.com/maps/dir/?api=1&destination={l["lat"]},{l["lng"]}'
     rotas = "".join(f'<a class="rota-btn rota-{l["id"]}" target="_blank" href="{link(l)}">Rota</a>' for l in LOCAIS_EXEMPLO)
 
     cards = "".join(
         f'<div class="mp-card card-{l["id"]} c-{l["cor"]}">{_cabecalho_popup(l)}'
         f'<div class="p-body"><div class="p-head"><b>{escape(l["nome"])}</b>'
         f'<span class="bortle">Bortle {l["bortle"]}</span></div>'
-        f'<div class="p-sub">{l["km"]} km de você · {l["minutos"]} min de carro</div>'
+        f'<div class="p-sub" data-sub="{l["id"]}">{l["km"]} km de você · {l["tempo"]} de carro</div>'
         f'<div class="p-stats"><div><b>{l["mag"]}</b><span>mag/arcsec²</span></div>'
         f'<div><b>{l["nuvens"]}%</b><span>nuvens hoje</span></div>'
         f'<div><b>{l["qualidade"]}</b><span>qualidade</span></div></div>'
@@ -2817,15 +3050,19 @@ def montar_mapa_html():
 
     faixa = "".join(f'<span class="c-{c}" data-nome="{n}"></span>' for c, n in
                     [("verde", "Excelente"), ("azul", "Bom"), ("amarelo", "Regular"), ("vermelho", "Ruim")])
-    bussola = ('<div class="bussola">N<svg width="14" height="14" viewBox="0 0 14 14">'
-               '<polygon points="7,1 12,13 7,10 2,13" fill="#fff"/></svg></div>')
-    escala = ('<div class="escala"><div class="nums"><span>0</span><span>25</span><span>50 km</span></div>'
-              '<div class="barra"></div></div>')
+
+    # O JavaScript (MAP_JS) lê estes dados e desenha o mapa interativo (Leaflet)
+    dados = [dict(id=l["id"], nome=l["nome"], cor=l["cor"], lat=l["lat"], lng=l["lng"], bortle=l["bortle"],
+                  ideal=l["qualidade"] in ("Excelente", "Bom"), b13=l["bortle"] <= 3)
+             for l in LOCAIS_EXEMPLO]
+    mapa = (f'<div id="astro-map" data-locais="{escape(json.dumps(dados, ensure_ascii=False), quote=True)}" '
+            f'data-voce="{escape(json.dumps(list(VOCE_PADRAO)), quote=True)}" data-kmmax="{KM_FILTRO}"></div>')
+    bussola = ('<button type="button" class="bussola" id="mapa-brasil" title="Voltar ao Brasil">N'
+               '<svg width="14" height="14" viewBox="0 0 14 14"><polygon points="7,1 12,13 7,10 2,13" fill="#fff"/></svg></button>')
 
     return (f'<style>{regras}</style><div class="mp-wrap">{radios}{checks}<div class="mp-grid">'
-            f'<div class="mapa">{fundo}{hd}{aneis}'
-            f'<div class="voce"><div class="halo"></div><div class="ponto"></div><div class="nome">Você</div></div>'
-            f'{marcadores}<div class="mp-chips">{chips}</div>{rotas}{bussola}<div class="faixa">{faixa}</div>{escala}</div>'
+            f'<div class="mapa">{mapa}<div class="mp-chips">{chips}</div>{rotas}{bussola}'
+            f'<div class="faixa">{faixa}</div></div>'
             f'<div class="mp-lado">{cards}{graficos}</div></div></div>')
 
 MAPA_HTML = montar_mapa_html()
@@ -2876,6 +3113,175 @@ ARTE = {
 
 def _arte(tipo):
     return f'<svg viewBox="0 0 120 120">{ARTE[tipo]}</svg>'
+
+
+# ---------------------------------------------------------------------------
+# Fotos reais dos astros (Wikipédia) para o Diário
+# ---------------------------------------------------------------------------
+import unicodedata
+from concurrent.futures import ThreadPoolExecutor
+
+WIKI_API = "https://pt.wikipedia.org/w/api.php"
+WIKI_HEADERS = {"User-Agent": "AstroLog/1.0 (projeto escolar; diario de observacao astronomica)"}
+CACHE_FOTOS_ARQ = os.path.join(os.path.dirname(os.path.abspath(__file__)), "astros_cache.json")
+DICA_TIPO = {"planeta": "planeta", "estrela": "estrela", "nebula": "nebulosa",
+             "galaxia": "galáxia", "lua": "Lua", "outro": "astronomia"}
+# A página precisa falar de astronomia (evita foto de pessoa, música, filme com o mesmo nome)
+TERMOS_ASTRO = ("astronom", "astro ", "astros", "planeta", "eclipse", "estrela", "estelar", "galaxia", "nebulos",
+                "cometa", "meteor", "asteroide", "constelac", "sistema solar", "universo", "telescop",
+                "satelite natural", "lunar", "orbita", "cosmic", "cosmos", "supernova", "aurora")
+# Palavras genéricas não bastam para confirmar que a foto é do astro digitado
+GENERICAS = {"nebulosa", "galaxia", "estrela", "planeta", "aglomerado", "cometa", "chuva", "meteoros"}
+LIGACOES = {"de", "da", "do", "das", "dos", "com", "para", "por", "uma", "que", "the", "and"}
+
+def _sem_acento(txt):
+    return "".join(c for c in unicodedata.normalize("NFD", txt) if unicodedata.category(c) != "Mn").lower()
+
+def _palavras(txt):
+    return {p for p in re.findall(r"[a-z0-9]+", _sem_acento(txt)) if len(p) >= 2 and p not in LIGACOES}
+
+try:
+    with open(CACHE_FOTOS_ARQ, encoding="utf-8") as _f:
+        FOTOS_CACHE = json.load(_f)
+except (OSError, ValueError):
+    FOTOS_CACHE = {}
+
+def _salvar_cache_fotos():
+    try:
+        with open(CACHE_FOTOS_ARQ, "w", encoding="utf-8") as f:
+            json.dump(FOTOS_CACHE, f, ensure_ascii=False)
+    except OSError:
+        pass
+
+def _foto_na_pasta(nome):
+    """Foto sua em img/astros/<nome>.jpg (ex.: marte.jpg) tem prioridade e funciona sem internet."""
+    slug = "_".join(re.findall(r"[a-z0-9]+", _sem_acento(nome)))
+    for ext in (".jpg", ".jpeg", ".png", ".webp"):
+        uri = foto_local(f"astros/{slug}{ext}", 900)
+        if uri:
+            return {"url": uri, "pagina": "", "fonte": "Foto local"}
+    return None
+
+def _fala_de_astronomia(pagina):
+    texto = _sem_acento(f'{pagina.get("title", "")} {pagina.get("extract", "")}')
+    return any(t in texto for t in TERMOS_ASTRO)
+
+def _buscar_wikipedia(consulta, palavras_do_nome):
+    params = {"action": "query", "format": "json", "generator": "search", "gsrsearch": consulta,
+              "gsrlimit": 4, "prop": "pageimages|info|extracts", "piprop": "thumbnail", "pithumbsize": 900,
+              "inprop": "url", "exintro": 1, "explaintext": 1, "exchars": 700, "exlimit": "max"}
+    r = requests.get(WIKI_API, params=params, headers=WIKI_HEADERS, timeout=6)
+    r.raise_for_status()
+    paginas = sorted((r.json().get("query", {}).get("pages", {})).values(), key=lambda p: p.get("index", 99))
+    significativas = (palavras_do_nome - GENERICAS) or palavras_do_nome
+    for p in paginas:
+        thumb = (p.get("thumbnail") or {}).get("source")
+        if thumb and significativas & _palavras(p.get("title", "")) and _fala_de_astronomia(p):
+            return {"url": thumb, "pagina": p.get("fullurl", ""), "fonte": "Wikipédia"}
+    return None
+
+def foto_astro(nome, tipo):
+    """Devolve {'url', 'pagina', 'fonte'} com a foto real do astro, ou None se não achar."""
+    nome = re.sub(r"\s+", " ", str(nome or "")).strip()
+    if len(nome) < 2:
+        return None
+    chave = "v2|" + _sem_acento(nome) + "|" + str(tipo)   # v2: ignora fotos guardadas antes da checagem de astronomia
+    if chave in FOTOS_CACHE:
+        return FOTOS_CACHE[chave]
+
+    # Variações do que foi digitado: "Júpiter e luas galileanas" -> "Júpiter"; "Nebulosa de Órion (M42)" -> sem parênteses
+    sem_par = re.sub(r"[()]", " ", nome).strip()
+    partes = re.split(r"\s+(?:e|-|–|—|/)\s+|\s*\(", nome)
+    variacoes = []
+    for v in [sem_par, partes[0].strip()]:
+        if v and v not in variacoes:
+            variacoes.append(v)
+
+    achou, falha_de_rede = None, False
+    for v in variacoes:
+        achou = _foto_na_pasta(v)
+        if achou:
+            break
+    if not achou:
+        dica = DICA_TIPO.get(tipo, "")
+        for v in variacoes:
+            palavras = _palavras(v)
+            consultas = [f"{v} {dica}".strip()] if dica and _sem_acento(dica) not in _sem_acento(v) else []
+            consultas.append(v)
+            for c in consultas:
+                try:
+                    achou = _buscar_wikipedia(c, palavras)
+                except (requests.RequestException, ValueError):
+                    falha_de_rede = True
+                    achou = None
+                if achou:
+                    break
+            if achou:
+                break
+
+    if achou or not falha_de_rede:       # não guarda "sem foto" quando foi só a internet que falhou
+        FOTOS_CACHE[chave] = achou
+        if achou:
+            _salvar_cache_fotos()
+    return achou
+
+def buscar_fotos(observacoes):
+    """{id_da_observação: foto} — consulta os astros diferentes em paralelo."""
+    unicos = {}
+    for o in observacoes:
+        unicos.setdefault((o.get("astro_observado") or "", o.get("tipo_astro") or ""), None)
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        resultados = dict(zip(unicos, pool.map(lambda k: foto_astro(*k), unicos)))
+    return {o["id"]: resultados[(o.get("astro_observado") or "", o.get("tipo_astro") or "")] for o in observacoes}
+
+def _img_astro(foto, nome):
+    return (f'<img src="{escape(foto["url"], quote=True)}" alt="{escape(str(nome or ""), quote=True)}" '
+            f'loading="lazy" referrerpolicy="no-referrer">')
+
+def _credito_foto(foto):
+    if foto.get("pagina"):
+        return (f'<a class="foto-credito" href="{escape(foto["pagina"], quote=True)}" target="_blank" '
+                f'rel="noopener">Foto: {foto["fonte"]}</a>')
+    return f'<span class="foto-credito">{foto["fonte"]}</span>'
+
+CSS_FOTOS = """
+.d-item .ic.com-foto { overflow: hidden; background: #0b0b24; }
+.d-item .ic.com-foto img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 0; margin: 0; }
+.d-banner.com-foto { background: #05061a; }
+.d-banner.com-foto::before, .d-banner.com-foto::after { display: none; }
+.d-banner.com-foto > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+                           display: block; margin: 0; border-radius: 0; }
+.foto-credito { position: absolute; right: 10px; bottom: 8px; z-index: 2; padding: 3px 10px; border-radius: 999px;
+                font-size: .68rem; color: #e8e6f5 !important; text-decoration: none; background: rgba(5,6,26,.7);
+                border: 1px solid rgba(255,255,255,.12); }
+a.foto-credito:hover { background: rgba(139,92,246,.6); }
+"""
+CSS += CSS_FOTOS
+
+CSS_TIPOS = """
+.d-tipos { margin-top: 18px; padding: 22px 26px; border-radius: 22px; background: rgba(20,22,48,.9);
+           border: 1px solid rgba(255,255,255,.06); }
+.d-tipos .d-tipos-titulo { color: #8d8bb5; font-size: .72rem; font-weight: 700; letter-spacing: .12em;
+                           text-transform: uppercase; margin-bottom: 12px; }
+.d-tipos .linha { display: flex; align-items: center; gap: 14px; padding: 9px 0; color: #fff; font-size: 1rem; }
+.d-tipos .ponto { width: 13px; height: 13px; border-radius: 50%; flex: none; background: var(--c); }
+.d-tipos .linha b { margin-left: auto; color: #9a98bd; font-weight: 500; }
+.tp-planeta { --c: #e8b06a; } .tp-estrela { --c: #38bdf8; } .tp-nebula { --c: #f783c0; }
+.tp-galaxia { --c: #3ecbf3; } .tp-lua { --c: #e8e2c8; } .tp-outro { --c: #fbc65a; }
+"""
+CSS += CSS_TIPOS
+
+def bloco_por_tipo(observacoes):
+    """Contagem real de registros por tipo de astro (só os tipos que têm registros)."""
+    contagem = {}
+    for o in observacoes:
+        tipo = o.get("tipo_astro") if o.get("tipo_astro") in TIPO_ROTULO else "outro"
+        contagem[tipo] = contagem.get(tipo, 0) + 1
+    ordem = list(TIPO_ROTULO)
+    tipos = sorted(contagem, key=lambda t: (-contagem[t], ordem.index(t)))
+    linhas = "".join(f'<div class="linha tp-{t}"><span class="ponto"></span>{TIPO_ROTULO[t]}<b>{contagem[t]}</b></div>'
+                     for t in tipos)
+    return f'<div class="d-tipos"><div class="d-tipos-titulo">Por tipo de astro</div>{linhas}</div>'
 
 CABECALHO_DIARIO = ('<div class="diario-head"><h1>Diário de observações</h1>'
                     '<p>Seus registros do céu, organizados em um só lugar.</p></div>')
@@ -2931,6 +3337,7 @@ def montar_diario():
         return CABECALHO_DIARIO + '<div class="d-vazio">Nenhum registro ainda. Clique em <b>Novo registro</b> para começar.</div>'
     
     obs.sort(key=lambda o: o.get("data_hora") or "", reverse=True)
+    fotos = buscar_fotos(obs)    # foto real de cada astro pelo nome digitado (cai na arte se não achar)
     txt = lambda o, k: escape(str(o.get(k) or "—"))
     
     radios = "".join(f'<input type="radio" name="filtro" id="f-{c}" class="d-radio"{" checked" if c == "todos" else ""}>'
@@ -2973,6 +3380,14 @@ def montar_diario():
             longa = (f"{DIAS[dt.weekday()]}, {dt.day} de {MESES[dt.month - 1]} de {dt.year} • {dt:%H:%M}"
                      if dt else "Data não informada")
             notas = escape(o.get("anotacoes") or "Sem anotações.").replace("\n", "<br>")
+            foto = fotos.get(i)
+            if foto:
+                cls_ic, cls_ban = " com-foto", " com-foto"
+                icone = _img_astro(foto, o.get("astro_observado"))
+                banner = icone + _credito_foto(foto)
+            else:
+                cls_ic = cls_ban = ""
+                icone = banner = _arte(tipo)
             
             regras += (f'#o-{i}:checked ~ .d-grid .det-{i}{{display:block}}'
                        f'#o-{i}:checked ~ .d-grid label[for=o-{i}] .d-item{{border-color:#8b5cf6;box-shadow:0 0 0 1px #8b5cf6;background:rgba(139,92,246,.1)}}')
@@ -2983,7 +3398,7 @@ def montar_diario():
                 f'  <div style="flex:1">'
                 f'    <div class="tl-date">{dia_mes}</div>'
                 f'    <label for="o-{i}" class="d-item">'
-                f'      <span class="ic">{_arte(tipo)}</span>'
+                f'      <span class="ic{cls_ic}">{icone}</span>'
                 f'      <span style="flex:1"><b>{txt(o, "astro_observado")}</b><small>{txt(o, "local")} • {txt(o, "visibilidade").capitalize()}</small></span>'
                 f'      <span class="tag-t">{TIPO_ROTULO[tipo]}</span>'
                 f'    </label>'
@@ -2993,7 +3408,7 @@ def montar_diario():
             
             detalhes += (
                 f'<div class="d-det det-{i}">'
-                f'  <div class="d-banner">{_arte(tipo)}</div>'
+                f'  <div class="d-banner{cls_ban}">{banner}</div>'
                 f'  <div class="d-det-header">'
                 f'    <h2>{txt(o, "astro_observado")}</h2>'
                 f'    <button class="btn-edit" onclick="window.editObs({i})">{ICONE_LAPIS} Editar</button>'
@@ -3014,7 +3429,7 @@ def montar_diario():
 
     return (f'<svg width="0" height="0" style="position:absolute">{DIARIO_DEFS}</svg><style>{regras}</style>'
             f'<div class="d-wrap">{radios}<div class="d-grid"><div class="d-esq">{CABECALHO_DIARIO}<div class="chips">{chips}</div>'
-            f'<div class="d-lista">{itens_html}</div></div><div class="d-dir">{detalhes}</div></div></div>')
+            f'<div class="d-lista">{itens_html}</div>{bloco_por_tipo(obs)}</div><div class="d-dir">{detalhes}</div></div></div>')
 
 MESES_ABREV = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
 ROSA, CIANO, ROXO, VERDE, LARANJA, AMARELO = "#f783c0", "#3ecbf3", "#9d7bfb", "#3fd69b", "#fb9547", "#f6c453"
@@ -3823,4 +4238,4 @@ if __name__ == "__main__":
 
     current_dir = os.path.dirname(os.path.abspath(__file__))
     img_path = os.path.abspath(os.path.join(current_dir, "..", "img"))
-    demo.launch(css=CSS, allowed_paths=[img_path], head=INPUT_MASK_JS + EDIT_JS + AUTH_JS + SESSION_JS)
+    demo.launch(css=CSS, allowed_paths=[img_path], head=LEAFLET_HEAD + INPUT_MASK_JS + EDIT_JS + AUTH_JS + SESSION_JS + MAP_JS)
