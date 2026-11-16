@@ -1,0 +1,24 @@
+# Ambientes Virtuais
+venv/
+env/
+.venv/
+
+# Arquivos do Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Banco de dados local / cache
+*.sqlite
+*.db
+frontend/astros_cache.json
+
+# Variáveis de ambiente e segredos
+.env
+
+# Arquivos do VS Code / Sistema Operacional
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
