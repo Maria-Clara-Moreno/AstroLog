@@ -1409,6 +1409,22 @@ CSS_MAPA_REAL = """
 """
 CSS += CSS_MAPA_REAL
 
+CSS_MINIMAPA = """
+#astro-mini { position: relative; z-index: 0; height: 300px; margin-top: 14px;
+              border-radius: 16px; overflow: hidden; background: #07081a; font-family: inherit; }
+#astro-mini img { margin: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
+#astro-mini img.leaflet-tile { max-width: none !important; max-height: none !important; }
+#astro-mini .mk .mk-nome, #astro-mini .mk .mk-tag { display: none; }
+#astro-mini .mk .glow { width: 70px; height: 70px; }
+#astro-mini .vm .halo { width: 120px; height: 120px; }
+#astro-mini .leaflet-bar { border: 1px solid rgba(255,255,255,.12) !important; box-shadow: none; }
+#astro-mini .leaflet-bar a, #astro-mini .leaflet-bar a:hover { background: #141634; color: #fff; border-bottom: 1px solid #2a2c5e; }
+#astro-mini .leaflet-bar a:hover { background: #22245a; }
+#astro-mini .leaflet-control-attribution { background: rgba(10,11,32,.7); color: #8a88ad; font-size: 9px; }
+#astro-mini .leaflet-control-attribution a { color: #a5a3c4; }
+"""
+CSS += CSS_MINIMAPA
+
 
 CSS_DIARIO = """
 #tela-app {
@@ -2703,7 +2719,7 @@ def montar_dashboard(nome_usuario=""):
     <div class="dcard"><div class="ceu-head"><div><b>Seu céu esta noite</b>
       <span class="sub">Explore o universo ao seu redor</span></div>
       <a class="dash-link" onclick="document.getElementById('nav-mapa').click()">Ver mapa completo ›</a></div>
-      {CEU_SVG}</div>
+      {minimapa_html()}</div>
     {apod}
   </div>
 </div>
@@ -2810,9 +2826,121 @@ MAP_JS = r"""
         setTimeout(function () { a.remove(); }, 4000);
     }
 
+    // Posição real (botão "Minha localização") guardada para o mapa grande e o minimapa usarem a mesma
+    function voceSalva() {
+        try {
+            var v = JSON.parse(sessionStorage.getItem('astrolog_voce'));
+            if (v && v.length === 2 && isFinite(v[0]) && isFinite(v[1])) return v;
+        } catch (e) {}
+        return null;
+    }
+
+    function baseEscura(mapa) {
+        var esri = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/';
+        return L.layerGroup([
+            L.tileLayer(esri + 'World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+                maxNativeZoom: 16, maxZoom: 19, attribution: 'Tiles &copy; Esri'
+            }),
+            L.tileLayer(esri + 'World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 16, maxZoom: 19 })
+        ]).addTo(mapa);
+    }
+
+    // Gradio esconde, reinsere e recria as páginas. O Leaflet só desenha certo se for avisado do tamanho real,
+    // então: (1) o ResizeObserver reage quando a página reaparece; (2) um vigia confere de tempos em tempos
+    // se o tamanho bate e se há tiles na tela, e corrige o que estiver preto.
+    var vigiados = [];
+
+    function vigiar(mapa, caixa, enquadrar, sempreEnquadrar) {
+        var reg = { mapa: mapa, caixa: caixa, enquadrar: enquadrar, largura: 0, enquadrou: false, ticks: 0, sem: 0 };
+        vigiados.push(reg);
+
+        function ajustar() {
+            var w = caixa.clientWidth, h = caixa.clientHeight;
+            if (w > 0 && h > 0) {
+                mapa.invalidateSize(false);
+                if (!reg.enquadrou || (sempreEnquadrar && reg.largura === 0)) {
+                    reg.enquadrou = true;
+                    enquadrar();
+                }
+            }
+            reg.largura = w;
+        }
+        reg.ajustar = ajustar;
+        new ResizeObserver(ajustar).observe(caixa);
+        ajustar();
+    }
+
+    setInterval(function () {
+        vigiados = vigiados.filter(function (r) {
+            if (!r.caixa.isConnected) {            // página escondida (pode voltar) ou bloco substituído (não volta)
+                if (++r.ticks > 75) { try { r.mapa.remove(); } catch (e) {} return false; }
+                return true;
+            }
+            r.ticks = 0;
+            var w = r.caixa.clientWidth, h = r.caixa.clientHeight;
+            if (w > 0 && h > 0) {
+                var t = r.mapa.getSize();
+                if (t.x !== w || t.y !== h) { r.ajustar(); }
+                if (!r.caixa.querySelector('.leaflet-tile-loaded')) {
+                    if (++r.sem % 5 === 0) {         // ~2 s sem nenhum tile: força o redesenho
+                        r.mapa.invalidateSize(false);
+                        r.mapa.eachLayer(function (l) { if (l.redraw) l.redraw(); });
+                    }
+                } else { r.sem = 0; }
+            } else {
+                r.largura = 0;                      // escondido: ao reaparecer, reenquadra
+            }
+            return true;
+        });
+    }, 400);
+
+    // Minimapa do dashboard: mesmo mapa cinza, mesmas bolinhas, com zoom (botões + e −, arrastar, duplo clique)
+    function iniciarMini(caixa) {
+        var locais = JSON.parse(caixa.dataset.locais);
+        var voce = voceSalva() || JSON.parse(caixa.dataset.voce);
+        var mapa = L.map(caixa, { zoomControl: false, zoomSnap: 0.25, minZoom: 3, scrollWheelZoom: false });
+        mapa.setView(voce, 5, { animate: false });
+        baseEscura(mapa);
+        L.control.zoom({ position: 'bottomright' }).addTo(mapa);
+
+        var vm = el('div', 'vm');
+        vm.appendChild(el('div', 'halo'));
+        vm.appendChild(el('div', 'ponto'));
+        vm.appendChild(el('div', 'nome', 'Você'));
+        L.marker(voce, { icon: L.divIcon({ className: 'astro-pin', html: vm, iconSize: [0, 0] }),
+                         interactive: false, keyboard: false, zIndexOffset: 500 }).addTo(mapa);
+
+        var pontos = [voce];
+        locais.forEach(function (l) {
+            var cor = COR[l.cor] || '#8b5cf6';
+            L.circle([l.lat, l.lng], { radius: 140000, stroke: false, fillColor: cor, fillOpacity: 0.12, interactive: false }).addTo(mapa);
+            L.circle([l.lat, l.lng], { radius: 70000, stroke: false, fillColor: cor, fillOpacity: 0.22, interactive: false }).addTo(mapa);
+            var pin = el('div', 'mk c-' + l.cor);
+            pin.appendChild(el('span', 'glow'));
+            pin.appendChild(el('span', 'ring'));
+            pin.appendChild(el('span', 'core'));
+            var marca = L.marker([l.lat, l.lng], {
+                icon: L.divIcon({ className: 'astro-pin', html: pin, iconSize: [0, 0] }), title: l.nome
+            }).addTo(mapa);
+            // Clicar numa bolinha abre o mapa completo com aquele local selecionado
+            marca.on('click', function () {
+                var radio = document.getElementById('loc-' + l.id);
+                if (radio) { radio.checked = true; radio.dispatchEvent(new Event('change', { bubbles: true })); }
+                var nav = document.getElementById('nav-mapa');
+                if (nav) nav.click();
+            });
+            pontos.push([l.lat, l.lng]);
+        });
+
+        // O minimapa é uma visão geral: reenquadra toda vez que a página reaparece
+        vigiar(mapa, caixa, function () {
+            mapa.fitBounds(L.latLngBounds(pontos), { padding: [34, 34], maxZoom: 6, animate: false });
+        }, true);
+    }
+
     function iniciar(caixa) {
         var locais = JSON.parse(caixa.dataset.locais);
-        var voce = JSON.parse(caixa.dataset.voce);
+        var voce = voceSalva() || JSON.parse(caixa.dataset.voce);
         var kmMax = Number(caixa.dataset.kmmax);
         var raiz = caixa.parentNode;
 
@@ -2924,6 +3052,7 @@ MAP_JS = r"""
                     if (!navigator.geolocation) { aviso(raiz, 'Seu navegador não permite obter a localização.'); return; }
                     navigator.geolocation.getCurrentPosition(function (p) {
                         var pos = [p.coords.latitude, p.coords.longitude];
+                        try { sessionStorage.setItem('astrolog_voce', JSON.stringify(pos)); } catch (e) {}
                         atualizarVoce(pos);
                         mapa.flyTo(pos, 7, { duration: 1 });
                     }, function () {
@@ -2946,21 +3075,24 @@ MAP_JS = r"""
         });
 
         // A página do mapa começa escondida: enquadra o Brasil quando ganhar tamanho de verdade
-        var enquadrado = false;
-        new ResizeObserver(function () {
-            mapa.invalidateSize();
-            if (!enquadrado && caixa.clientWidth > 0 && caixa.clientHeight > 0) {
-                enquadrado = true;
-                mapa.fitBounds(BRASIL, { padding: [24, 24], animate: false });
-            }
-        }).observe(caixa);
+        // No mapa grande só enquadra na primeira vez, para não desfazer o zoom que a pessoa fez
+        vigiar(mapa, caixa, function () {
+            mapa.fitBounds(BRASIL, { padding: [24, 24], animate: false });
+        }, false);
     }
 
     function verificar() {
+        if (!window.L) return;
         var caixa = document.getElementById('astro-map');
-        if (!caixa || caixa._astro || !window.L) return;
-        caixa._astro = true;
-        try { iniciar(caixa); } catch (e) { console.error('Mapa AstroLog:', e); }
+        if (caixa && !caixa._astro) {
+            caixa._astro = true;
+            try { iniciar(caixa); } catch (e) { console.error('Mapa AstroLog:', e); }
+        }
+        var mini = document.getElementById('astro-mini');   // o dashboard recria este bloco a cada atualização
+        if (mini && !mini._astro) {
+            mini._astro = true;
+            try { iniciarMini(mini); } catch (e) { console.error('Minimapa AstroLog:', e); }
+        }
     }
 
     new MutationObserver(verificar).observe(document.documentElement, { childList: true, subtree: true });
@@ -3004,6 +3136,12 @@ def _grafico(l, hoje):
             f'<stop offset="0" stop-color="#8b5cf6"/><stop offset="1" stop-color="#8b5cf6" stop-opacity=".12"/>'
             f'</linearGradient></defs>{grade}{barras}<polygon points="{area}" fill="rgba(139,92,246,.12)"/>'
             f'<polyline points="{linha}" fill="none" stroke-width="2" style="stroke:var(--c)"/>{bolas}{dias}</svg>')
+
+def minimapa_html():
+    """Mapinha do dashboard: mesmos locais e "Você" do mapa completo (o JS MAP_JS desenha com o Leaflet)."""
+    dados = [dict(id=l["id"], nome=l["nome"], cor=l["cor"], lat=l["lat"], lng=l["lng"]) for l in LOCAIS_EXEMPLO]
+    return (f'<div id="astro-mini" data-locais="{escape(json.dumps(dados, ensure_ascii=False), quote=True)}" '
+            f'data-voce="{escape(json.dumps(list(VOCE_PADRAO)), quote=True)}"></div>')
 
 def montar_mapa_html():
     hoje = datetime.now()
@@ -3153,13 +3291,39 @@ def _salvar_cache_fotos():
     except OSError:
         pass
 
+# Fases da Lua: palavras que precisam aparecer no que foi digitado -> arquivo em img/astros/
+# (a ordem importa: as combinações mais específicas vêm primeiro)
+FASES_LUA = [
+    ({"sangue"}, "lua_de_sangue"),
+    ({"quarto", "crescente"}, "quarto_crescente"),
+    ({"quarto", "minguante"}, "quarto_minguante"),
+    ({"gibosa", "minguante"}, "minguante_gibosa"),
+    ({"nova"}, "lua_nova"),
+    ({"minguante"}, "minguante"),
+    ({"crescente"}, "crescente"),
+]
+
+def _foto_da_fase_da_lua(nome, tipo):
+    palavras = set(re.findall(r"[a-z0-9]+", _sem_acento(nome)))
+    if not (tipo == "lua" or palavras & {"lua", "quarto"}):
+        return None      # "crescente" ou "nova" soltos, em outro tipo de astro, não são Lua
+    for exigidas, arquivo in FASES_LUA:
+        if exigidas <= palavras:
+            achou = _foto_na_pasta(arquivo)
+            if achou:
+                return achou
+    return None
+
 def _foto_na_pasta(nome):
-    """Foto sua em img/astros/<nome>.jpg (ex.: marte.jpg) tem prioridade e funciona sem internet."""
+    """Foto sua na pasta img/ (ou img/astros/), ex.: marte.png — tem prioridade e funciona sem internet."""
     slug = "_".join(re.findall(r"[a-z0-9]+", _sem_acento(nome)))
-    for ext in (".jpg", ".jpeg", ".png", ".webp"):
-        uri = foto_local(f"astros/{slug}{ext}", 900)
-        if uri:
-            return {"url": uri, "pagina": "", "fonte": "Foto local"}
+    if not slug:
+        return None
+    for subpasta in ("astros/", ""):
+        for ext in (".png", ".jpg", ".jpeg", ".webp"):
+            uri = foto_local(f"{subpasta}{slug}{ext}", 900)
+            if uri:
+                return {"url": uri, "pagina": "", "fonte": "Foto local"}
     return None
 
 def _fala_de_astronomia(pagina):
@@ -3186,8 +3350,6 @@ def foto_astro(nome, tipo):
     if len(nome) < 2:
         return None
     chave = "v2|" + _sem_acento(nome) + "|" + str(tipo)   # v2: ignora fotos guardadas antes da checagem de astronomia
-    if chave in FOTOS_CACHE:
-        return FOTOS_CACHE[chave]
 
     # Variações do que foi digitado: "Júpiter e luas galileanas" -> "Júpiter"; "Nebulosa de Órion (M42)" -> sem parênteses
     sem_par = re.sub(r"[()]", " ", nome).strip()
@@ -3197,12 +3359,20 @@ def foto_astro(nome, tipo):
         if v and v not in variacoes:
             variacoes.append(v)
 
-    achou, falha_de_rede = None, False
+    # 1) Fotos suas em img/astros/ (fases da Lua ou arquivo com o nome do astro) valem mais que a internet
+    achou = _foto_da_fase_da_lua(nome, tipo)
     for v in variacoes:
-        achou = _foto_na_pasta(v)
         if achou:
             break
-    if not achou:
+        achou = _foto_na_pasta(v)
+    if achou:
+        return achou        # foto local: não vai para o cache (o arquivo pode mudar)
+
+    # 2) Wikipédia (com cache)
+    if chave in FOTOS_CACHE:
+        return FOTOS_CACHE[chave]
+    achou, falha_de_rede = None, False
+    if True:
         dica = DICA_TIPO.get(tipo, "")
         for v in variacoes:
             palavras = _palavras(v)
@@ -3235,7 +3405,8 @@ def buscar_fotos(observacoes):
     return {o["id"]: resultados[(o.get("astro_observado") or "", o.get("tipo_astro") or "")] for o in observacoes}
 
 def _img_astro(foto, nome):
-    return (f'<img src="{escape(foto["url"], quote=True)}" alt="{escape(str(nome or ""), quote=True)}" '
+    classe = ' class="contida"' if foto.get("fonte") == "Foto local" else ""
+    return (f'<img{classe} src="{escape(foto["url"], quote=True)}" alt="{escape(str(nome or ""), quote=True)}" '
             f'loading="lazy" referrerpolicy="no-referrer">')
 
 def _credito_foto(foto):
@@ -3254,6 +3425,7 @@ CSS_FOTOS = """
 .foto-credito { position: absolute; right: 10px; bottom: 8px; z-index: 2; padding: 3px 10px; border-radius: 999px;
                 font-size: .68rem; color: #e8e6f5 !important; text-decoration: none; background: rgba(5,6,26,.7);
                 border: 1px solid rgba(255,255,255,.12); }
+.d-banner.com-foto > img.contida { object-fit: contain; }
 a.foto-credito:hover { background: rgba(139,92,246,.6); }
 """
 CSS += CSS_FOTOS
@@ -4058,9 +4230,9 @@ with gr.Blocks(title="AstroLog") as demo:
                                 visibilidade = gr.Dropdown(VISIBILIDADE, label="Visibilidade", value="boa")
                             anotacoes = gr.Textbox(label="Anotações", lines=3)
                             with gr.Row():
-                                btn_salvar = gr.Button("Salvar", variant="primary", scale=2, min_width=0)
                                 btn_cancelar_edicao = gr.Button("Cancelar edição", variant="stop",
                                                                 visible=False, scale=1, min_width=0)
+                                btn_salvar = gr.Button("Salvar", variant="primary", scale=2, min_width=0)
                             msg_salvar = gr.Markdown()
 
                         with gr.Tab("Histórico de Observações", id="historico"):
